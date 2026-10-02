@@ -159,9 +159,9 @@ system health/metrics · capacity report · org-wide analytics & infra cost.
 | Phase | Scope | Tools (≈) | Effort |
 |---|---|---|---|
 | **0 — POC** ✅ | SSO capture, refresh, 27 tools, live chat verified | 27 | done |
-| **1 — Hardening** | uv packaging + `playwright install` bootstrap; OS keyring for tokens; silent headless re-login with the saved profile; unified error model (401/403/pending_approval/account_disabled/cooling_down); tool annotations; httpx mocks (respx) + recorded fixtures; contract-drift check (hash the SPA bundle, diff the extracted endpoint list) | +3 | 2–3 d |
-| **2 — Conversation completeness** | agents/skills/workflow pickers; `vibeflow_ask` composite; fork/resume/compact/abort/retry; permission & question replies + pending prompts; attachments upload; cost/context usage; pin/archive/delete; SSE streaming with progress notifications | +18 | 4–5 d |
-| **3 — Code loop** | files (tree/read/search/upload/delete/download), branches/checkout, changes status/diff, AI commit message, push/PR, git-sync, restore points (list/diff/revert/undo), preview run/stop/logs/fix, start-session-with-git | +20 | 4–5 d |
+| **1 — Hardening** ✅ | uv packaging + `playwright install` bootstrap; OS keyring for tokens; silent headless re-login with the saved profile; unified error model (401/403/pending_approval/account_disabled/cooling_down); tool annotations; httpx mocks (respx) + recorded fixtures; contract-drift check (hash the SPA bundle, diff the extracted endpoint list) | +3 | 2–3 d |
+| **2 — Conversation completeness** ✅ | agents/skills/workflow pickers; `vibeflow_ask` composite; fork/resume/compact/abort/retry; permission & question replies + pending prompts; attachments upload; cost/context usage; pin/archive/delete; SSE streaming with progress notifications | +18 | 4–5 d |
+| **3 — Code loop** ✅ | files (tree/read/search/upload/delete/download), branches/checkout, changes status/diff, AI commit message, push/PR, git-sync, restore points (list/diff/revert/undo), preview run/stop/logs/fix, start-session-with-git | +20 | 4–5 d |
 | **4 — Project management** | projects CRUD/pin, members/roles, kanban CRUD/move/assign/archive, task CRUD + attachments, templates (agents/prompts/workflows + import/export), Canvas workflow get/put/run/step, git credentials, project & personal LLM providers, budget, Jira, SharePoint, settings/onboarding/terms | +35 | 5–6 d |
 | **5 — Analytics** | project cost/KPI/outcome/code-activity tools + export; user stats | +8 | 1–2 d |
 | **6 — Admin** (opt-in toolset, role-checked at startup via `/auth/me`) | users/approvals/whitelist/roles, providers & keys, DLP, audit, sessions, health/metrics/capacity, org analytics | +30 | 3–4 d |
@@ -198,3 +198,24 @@ Total ≈ 150 tools / ~4–5 weeks for one engineer; Phases 1–3 (~2 weeks) alr
 - `transcript.md` lags behind; structured `/runs/{id}/messages` (parts: text / tool / step-*) is authoritative.
 - Run status settles to `idle` on success, `failed` with `error_message` on error.
 - Sandbox start → running took ≈ 30–60 s; stop is immediate (workspace auto-saved; resumable).
+
+## 8. Learnings from Phases 1–3 (2026-10-03)
+
+- **Status: phases 1–3 shipped** — 68 tools, 74 unit tests, each phase verified live against production.
+- Refresh tokens rotate: refreshes are serialized **and keyed on the stale token the failing request used**;
+  keying on "the token at call time" made a late 401 rotate a second time.
+- Headless Chromium must override the `HeadlessChrome` UA (WAF 403s it). Silent re-login must clear the SPA's
+  cached localStorage tokens first, or it lifts a stale pair whose refresh token was already rotated away.
+- Windows Credential Manager caps secrets at 2560 bytes → keyring storage is chunked.
+- `mcp` 2.x renamed FastMCP → pinned `mcp<2`.
+- A **new run reports `idle` before the agent picks it up**, and a follow-up before its turn starts: completion =
+  idle + last message is a *completed* assistant message + message count ≥ expected. One turn can span several
+  assistant messages (tool step, then answer).
+- Sandbox SSE events are wrapped `{event_type, payload, conversation_id}`; one sandbox serves many
+  conversations, so progress is filtered by `conversation_id`.
+- Sessions start with `git_setup_mode = init` (local projects) / `clone` (git projects), not `none`.
+- Code endpoints take `task_id` (the project's default task) + `session_id`; file writes are two-step
+  (stage via `/sessions/{sid}/vibeflow/file/upload`, then `POST /files/upload`).
+- `/changes/generate-message` runs an LLM server-side (> 60 s observed) and sometimes returns
+  "AI returned empty response" — a platform-side issue, surfaced as a `bad_request` error.
+- Restore points exist only for conversations run in the current pod (`run_not_found` after a restart).

@@ -160,6 +160,7 @@ async def test_ask_starts_sandbox_and_conversation(api):
     api.get("/api/v1/sessions/status").mock(side_effect=[
         httpx.Response(200, json={"status": "stopped"}),
         httpx.Response(200, json={"status": "running", "session_id": "s1"})])
+    api.get("/api/v1/projects/p1").mock(return_value=httpx.Response(200, json={"project_type": "local"}))
     start = api.post("/api/v1/sessions/start").mock(return_value=httpx.Response(200, json={"success": True}))
     api.get("/api/v1/projects/p1/my-recent-task").mock(return_value=httpx.Response(200, json={"task_id": "t1"}))
     run = api.post("/api/v1/runs").mock(return_value=httpx.Response(200, json={"success": True, "run_id": "r9"}))

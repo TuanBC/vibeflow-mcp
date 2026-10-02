@@ -3,8 +3,9 @@
 MCP server for **VibeFlow** (https://vibeflow.fptconsulting.co.jp) — drive projects, sandboxes and
 AI-agent conversations from Claude Code (or any MCP client) without the web UI.
 
-Status: **POC** — 27 tools, verified end-to-end against production (SSO login → sandbox start →
-agent conversation → reply → sandbox stop). See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the full roadmap.
+Status: **Phases 1–3 done** — 68 tools (hardening, full conversation feature set, code loop), verified
+against production. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the roadmap (phases 4–7: project
+management, analytics, admin, advanced).
 
 ## How auth works
 
@@ -64,30 +65,53 @@ uv venv .venv && uv pip install -e ".[test]"
 .venv/Scripts/python -m pytest
 ```
 
-## Tools (POC)
+## Tools (68)
+
+Toolsets are chosen with `VIBEFLOW_TOOLSETS` (default `core,code`). Destructive or publishing tools require
+`confirm=true`; every tool carries MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as
+`{"error": <code>, "message", "hint"}` (e.g. `auth_required`, `no_session`, `busy`, `quota_exceeded`).
+
+### core
 
 | Group | Tools |
 |---|---|
-| Auth | `vibeflow_login`, `vibeflow_set_token`, `vibeflow_auth_status`, `vibeflow_logout`, `vibeflow_whoami` |
+| Auth & account | `vibeflow_login`, `vibeflow_set_token`, `vibeflow_auth_status`, `vibeflow_logout`, `vibeflow_whoami`, `vibeflow_my_stats`, `vibeflow_get_quota` |
 | Workspace | `vibeflow_list_projects`, `vibeflow_get_project`, `vibeflow_get_recent_task`, `vibeflow_list_tasks`, `vibeflow_get_task`, `vibeflow_get_kanban`, `vibeflow_search` |
-| Chat | `vibeflow_list_conversations`, `vibeflow_get_conversation`, `vibeflow_get_transcript`, `vibeflow_get_messages`, `vibeflow_start_conversation`, `vibeflow_send_message`, `vibeflow_wait_for_reply`, `vibeflow_rename_conversation` |
-| Sandbox | `vibeflow_session_status`, `vibeflow_list_my_sessions`, `vibeflow_start_session`, `vibeflow_stop_session` |
-| Meta | `vibeflow_list_models`, `vibeflow_get_quota`, `vibeflow_api` (raw escape hatch for any endpoint) |
+| Sandbox | `vibeflow_session_status`, `vibeflow_list_my_sessions`, `vibeflow_start_session` (waits; git clone for git projects), `vibeflow_save_session`, `vibeflow_stop_session`* |
+| Pickers | `vibeflow_list_models`, `vibeflow_list_agents` (!), `vibeflow_list_skills` (/), `vibeflow_list_workflows` (#) |
+| Chat | **`vibeflow_ask`** (one call: sandbox → conversation → reply), `vibeflow_start_conversation`, `vibeflow_send_message`, `vibeflow_wait_for_reply` (live progress via SSE) |
+| Human in the loop | `vibeflow_pending_prompts`, `vibeflow_reply_permission`, `vibeflow_answer_question` |
+| Conversation mgmt | `vibeflow_list_conversations`, `vibeflow_get_conversation`, `vibeflow_get_messages`, `vibeflow_get_transcript`, `vibeflow_conversation_usage`, `vibeflow_list_artifacts`, `vibeflow_abort`*, `vibeflow_resume_conversation`, `vibeflow_compact_conversation`, `vibeflow_fork_conversation`, `vibeflow_rename_conversation`, `vibeflow_pin_conversation`, `vibeflow_archive_conversation`, `vibeflow_delete_conversation`* |
+| Escape hatch | `vibeflow_api` (any endpoint) |
 
-Typical flow:
+### code (sandbox must be running)
 
-1. `vibeflow_list_projects` → project id
-2. `vibeflow_start_session(project_id)` → poll `vibeflow_session_status` until `running`
-3. `vibeflow_get_recent_task(project_id)` → task id
-4. `vibeflow_start_conversation(task_id, prompt, model="google-starter/gemini-3.7-flash")` → run id
-5. `vibeflow_wait_for_reply(run_id)`; continue with `vibeflow_send_message`
-6. `vibeflow_stop_session(session_id)` when done (sandboxes idle-stop after 1 h anyway)
+| Group | Tools |
+|---|---|
+| Files | `vibeflow_list_files`, `vibeflow_read_file`, `vibeflow_search_files`, `vibeflow_write_file`, `vibeflow_upload_file`, `vibeflow_delete_file`*, `vibeflow_download_file`, `vibeflow_download_workspace` |
+| Git | `vibeflow_list_branches`, `vibeflow_checkout_branch`, `vibeflow_get_changes`, `vibeflow_get_diff`, `vibeflow_generate_commit_message`, `vibeflow_push_changes`*, `vibeflow_git_sync` |
+| Restore points | `vibeflow_list_restore_points`, `vibeflow_restore_point_diff`, `vibeflow_revert_to`*, `vibeflow_undo_revert` |
+| Preview | `vibeflow_preview_run`, `vibeflow_preview_status`, `vibeflow_preview_stop`, `vibeflow_preview_fix` |
 
-Models are `<provider>/<id>`; `provider_scope="auto"` maps shared platform models to `platform` scope
-(billed against your monthly platform quota — see `vibeflow_get_quota`).
+\* destructive / publishing: requires `confirm=true`.
+
+### Typical flows
+
+- **Quick question / task:** `vibeflow_ask(prompt, project_id?, agent?, skill?, workflow?)` — returns the reply,
+  cost and tools used; long jobs continue with `vibeflow_wait_for_reply(run_id)`.
+- **Multi-turn:** `vibeflow_send_message(run_id, ...)` → `vibeflow_wait_for_reply(run_id, min_messages=...)`.
+  If the outcome is `needs_input`, answer with `vibeflow_reply_permission` / `vibeflow_answer_question`.
+- **Code review loop:** `vibeflow_get_changes` → `vibeflow_get_diff` → `vibeflow_generate_commit_message` →
+  `vibeflow_push_changes(confirm=true)`; undo agent edits with restore points.
+
+Models are `<provider>/<id>`; bare platform ids resolve automatically and `provider_scope="auto"` bills shared
+platform models to your monthly quota (`vibeflow_get_quota`). A first turn costs ≈ 40k input tokens of agent
+system prompt (~$0.005–0.03 depending on model).
 
 ## Security notes
 
-- `tokens.json` holds a bearer token for your account — keep it private (file is chmod 600 where supported).
-- `browser-profile/` holds your Microsoft session cookies.
+- Tokens live in the OS keyring (Windows Credential Manager / macOS Keychain / Secret Service) by default; with
+  `VIBEFLOW_TOKEN_BACKEND=file` they are in `~/.vibeflow-mcp/tokens.json` (chmod 600 where supported).
+- `~/.vibeflow-mcp/browser-profile/` holds your Microsoft session cookies (used for silent re-login).
+- `git_token` passed to `vibeflow_start_session` is sent to VibeFlow only and never echoed back.
 - `vibeflow_logout` revokes server-side and deletes the local token.

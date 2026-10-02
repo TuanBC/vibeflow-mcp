@@ -75,8 +75,11 @@ class VibeFlowClient:
                 method.upper(), path, params=params or None, json=json, files=files, data=data,
                 headers={"Authorization": f"Bearer {token}", **(headers or {})}, **kw,
             )
+        except httpx.TimeoutException as exc:
+            raise VibeFlowError(f"Timed out calling {path} ({type(exc).__name__}).", code="timeout",
+                                hint="The server is slow (often an LLM step); retry shortly.") from exc
         except httpx.HTTPError as exc:
-            raise VibeFlowError(f"Network error calling {path}: {exc}", code="network_error",
+            raise VibeFlowError(f"Network error calling {path}: {type(exc).__name__} {exc}", code="network_error",
                                 hint="Check connectivity to api.vibeflow.fptconsulting.co.jp.") from exc
         if resp.status_code == 401 and not _retried and await self._recover(token):
             return await self.raw(method, path, params=params, json=json, files=files, data=data,
@@ -102,22 +105,22 @@ class VibeFlowClient:
             raise ApiError(resp.status_code, method.upper(), path, detail)
         return body
 
-    async def get(self, path: str, **params: Any) -> Any:
+    async def get(self, path: str, /, **params: Any) -> Any:
         return await self.request("GET", path, params=params)
 
-    async def post(self, path: str, body: Any = None, **params: Any) -> Any:
+    async def post(self, path: str, body: Any = None, /, **params: Any) -> Any:
         return await self.request("POST", path, json=body if body is not None else {}, params=params)
 
     async def put(self, path: str, body: Any = None) -> Any:
         return await self.request("PUT", path, json=body)
 
-    async def patch(self, path: str, body: Any = None, **params: Any) -> Any:
+    async def patch(self, path: str, body: Any = None, /, **params: Any) -> Any:
         return await self.request("PATCH", path, json=body, params=params)
 
-    async def delete(self, path: str, **params: Any) -> Any:
+    async def delete(self, path: str, /, **params: Any) -> Any:
         return await self.request("DELETE", path, params=params)
 
-    async def get_bytes(self, path: str, **params: Any) -> bytes:
+    async def get_bytes(self, path: str, /, **params: Any) -> bytes:
         resp = await self.raw("GET", path, params=params, timeout=300)
         if resp.status_code >= 400:
             raise ApiError(resp.status_code, "GET", path, self._body(resp))

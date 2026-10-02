@@ -27,11 +27,24 @@ async def wait_running(project_id: str, timeout: int) -> dict[str, Any]:
                         code="timeout", hint="Check vibeflow_session_status again shortly.")
 
 
+async def start_body(project_id: str, git_token: str | None = None) -> dict[str, Any]:
+    """Mirror the SPA: local projects 'init' a workspace repo, git projects
+    'clone' their remote (optionally with a one-off token)."""
+    project = await client.get(f"/api/v1/projects/{project_id}")
+    local = project.get("project_type") == "local"
+    body: dict[str, Any] = {"project_id": project_id, "git_setup_mode": "init" if local else "clone"}
+    if not local:
+        body.update(git_url=project.get("git_url"), git_provider=project.get("git_provider"))
+        if git_token:
+            body["git_token"] = git_token
+    return body
+
+
 async def ensure_session(project_id: str, timeout: int = 300) -> str:
     """Return the running session id, starting the sandbox if needed."""
     status = await client.get("/api/v1/sessions/status", project_id=project_id)
     if status.get("status") != READY:
-        await client.post("/api/v1/sessions/start", {"project_id": project_id, "git_setup_mode": "none"})
+        await client.post("/api/v1/sessions/start", await start_body(project_id))
         status = await wait_running(project_id, timeout)
     return status["session_id"]
 
@@ -49,13 +62,24 @@ async def vibeflow_list_my_sessions() -> Any:
 
 
 @tool("core")
-async def vibeflow_start_session(project_id: str, wait: bool = True, timeout_seconds: int = 300) -> Any:
-    """Start (or resume) the project's sandbox. With wait=true (default) blocks
-    until it is running (typically 30-60 s) and returns the session status."""
-    started = await client.post("/api/v1/sessions/start", {"project_id": project_id, "git_setup_mode": "none"})
+async def vibeflow_start_session(project_id: str, wait: bool = True, timeout_seconds: int = 300,
+                                 git_token: str | None = None) -> Any:
+    """Start (or resume) the project's sandbox. Git projects clone their remote
+    (git_token: optional one-off access token if no stored git credential).
+    With wait=true (default) blocks until running (typically 30-60 s)."""
+    started = await client.post("/api/v1/sessions/start", await start_body(project_id, git_token))
     if not wait:
         return started
-    return await wait_running(project_id, timeout_seconds)
+    status = await wait_running(project_id, timeout_seconds)
+    if started.get("clone_warning") or status.get("clone_warning"):
+        status["clone_warning"] = started.get("clone_warning") or status.get("clone_warning")
+    return status
+
+
+@tool("core")
+async def vibeflow_save_session(session_id: str) -> Any:
+    """Snapshot the sandbox workspace now (it is also saved on stop)."""
+    return await client.post(f"/api/v1/sessions/{session_id}/save")
 
 
 @tool("core", destructive=True)

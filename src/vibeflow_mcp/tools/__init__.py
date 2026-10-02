@@ -5,4 +5,4 @@ Toolsets:
   code - files, git changes/push, restore points, preview
 """
 
-from . import chat, core, sandbox  # noqa: F401
+from . import chat, code, core, sandbox  # noqa: F401

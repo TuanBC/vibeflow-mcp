@@ -150,6 +150,14 @@ async def test_client_raises_classified_error(logged_in):
     assert exc.value.code == "no_session"
 
 
+@respx.mock
+async def test_client_timeout_is_classified(logged_in):
+    respx.get(f"{API}/api/v1/changes/generate-message").mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(errors.VibeFlowError) as exc:
+        await app.client.get("/api/v1/changes/generate-message")
+    assert exc.value.code == "timeout"
+
+
 async def test_client_requires_login():
     with pytest.raises(errors.AuthRequired):
         await app.client.get("/api/v1/auth/me")
