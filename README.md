@@ -22,18 +22,47 @@ and the tokens are lifted from localStorage into `~/.vibeflow-mcp/tokens.json`. 
 
 ## Setup
 
-Requires Python ≥ 3.10, `mcp`, `httpx`, `playwright` (+ `playwright install chromium`).
+Requires Python ≥ 3.10.
 
 ```bash
-pip install -e .
+uv venv .venv && uv pip install -e ".[test]"
 ```
 
 ```bash
-vibeflow-mcp login
+.venv/Scripts/vibeflow-mcp install-browser
+```
+
+```bash
+.venv/Scripts/vibeflow-mcp login
 ```
 
 `.mcp.json` in this folder registers the server for Claude Code (edit the interpreter path for your machine).
-Alternatively: `claude mcp add vibeflow -- python -m vibeflow_mcp` with `PYTHONPATH=<repo>/src`.
+
+### CLI
+
+| Command | Purpose |
+|---|---|
+| `vibeflow-mcp` | run the MCP server (stdio) |
+| `vibeflow-mcp login [--headless]` | SSO login; `--headless` re-uses the saved Microsoft session silently |
+| `vibeflow-mcp status` / `logout` | token status / delete local token |
+| `vibeflow-mcp install-browser` | download Playwright's Chromium |
+| `vibeflow-mcp contract-check [--update]` | diff the live SPA's API calls against `endpoints.lock` (exit 1 on drift) |
+
+### Configuration (env)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VIBEFLOW_TOOLSETS` | `core,code` | tool groups to expose |
+| `VIBEFLOW_TOKEN_BACKEND` | `auto` | `keyring` (OS credential store), `file`, or `auto` (keyring if available; migrates an old `tokens.json`) |
+| `VIBEFLOW_SILENT_RELOGIN` | `1` | when refresh fails, try a headless SSO login with the saved browser profile |
+| `VIBEFLOW_DEFAULT_MODEL` | – | model used by `vibeflow_ask` when none is given |
+| `VIBEFLOW_USER_AGENT` | Chrome UA | sent on every request (the WAF blocks non-browser UAs) |
+
+### Tests
+
+```bash
+.venv/Scripts/python -m pytest
+```
 
 ## Tools (POC)
 

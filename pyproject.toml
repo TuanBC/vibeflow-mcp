@@ -1,13 +1,18 @@
 [project]
 name = "vibeflow-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for the VibeFlow platform (vibeflow.fptconsulting.co.jp) using SSO-captured tokens"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.20",
+    "mcp>=1.20,<2",  # 2.x renamed FastMCP -> MCPServer
     "httpx>=0.27",
     "playwright>=1.45",
+    "keyring>=24",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "respx>=0.21"]
 
 [project.scripts]
 vibeflow-mcp = "vibeflow_mcp.__main__:main"
@@ -18,3 +23,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vibeflow_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["live: hits the real VibeFlow API (opt-in: VIBEFLOW_LIVE=1)"]

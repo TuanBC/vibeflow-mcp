@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "vibeflow": {
-      "command": "C:\\Users\\<user>\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+      "command": "C:\\1_personal_course\\viettel\\vibeflow-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "vibeflow_mcp"],
       "env": {
-        "PYTHONPATH": "C:\\1_personal_course\\viettel\\vibeflow-mcp\\src"
+        "VIBEFLOW_TOOLSETS": "core,code"
       }
     }
   }
