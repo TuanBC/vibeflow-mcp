@@ -16,7 +16,9 @@ def message(msg: dict[str, Any], *, show_tools: bool = True, max_tool_output: in
             state = p.get("tool_state") or {}
             if not isinstance(state, dict):
                 state = {}
-            line = f"[tool {p.get('tool_name')} {state.get('status', '')}] {state.get('title') or ''}".rstrip()
+            inp = state.get("input") if isinstance(state.get("input"), dict) else {}
+            title = state.get("title") or inp.get("description") or inp.get("command") or inp.get("filePath") or ""
+            line = f"[tool {p.get('tool_name')} {state.get('status', '')}] {title}".rstrip()
             out = state.get("output")
             if isinstance(out, str) and out.strip() and max_tool_output:
                 snippet = out.strip().replace("\n", " ")
