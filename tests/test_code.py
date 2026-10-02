@@ -155,6 +155,18 @@ async def test_preview_status_builds_urls(api):
     assert out["urls"] == ["https://s1-3000.preview.vibeflow.fptconsulting.co.jp"] and out["logs"] == "ready"
 
 
+async def test_preview_link_exchanges_code(api):
+    api.get("/sessions/s1/vibeflow/snapshot").mock(return_value=httpx.Response(200, json={"preview_ports": [{"port": 8765}]}))
+    api.post("/api/v1/preview/exchange-token").mock(return_value=httpx.Response(200, json={"code": "abc1"}))
+    out = payload(await code.vibeflow_preview_link("p1"))
+    assert out["signin_link"] == "https://s1-8765.preview.vibeflow.fptconsulting.co.jp/_vibeflow_auth?code=abc1"
+
+
+async def test_preview_link_without_preview(api):
+    api.get("/sessions/s1/vibeflow/snapshot").mock(return_value=httpx.Response(200, json={"preview_ports": []}))
+    assert payload(await code.vibeflow_preview_link("p1"))["error"] == "not_found"
+
+
 # ------------------------------------------------------------------ sandbox
 
 @pytest.mark.parametrize("project,expected", [

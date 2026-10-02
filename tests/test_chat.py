@@ -141,6 +141,40 @@ async def test_wait_reports_failure(api):
     assert out["outcome"] == "failed" and out["error"] == "Model not configured" and out["reply"] is None
 
 
+async def test_wait_skips_completed_tool_step_after_answering_question(api):
+    """Live bug: after answering a question, the completed question-asking
+    message (finish=tool-calls) was mistaken for the end of the turn."""
+    api.get("/api/v1/runs/r1").mock(return_value=httpx.Response(200, json={"id": "r1", "status": "idle"}))
+    ask = {"role": "assistant", "time_completed": 1, "metadata": {"finish": "tool-calls"},
+           "parts": [{"type": "tool", "tool_name": "question", "tool_state": {"status": "completed"}}]}
+    answer = {**msg("assistant", "Blue"), "metadata": {"finish": "stop"}}
+    api.get("/api/v1/runs/r1/messages").mock(side_effect=[
+        httpx.Response(200, json={"messages": [msg("user", "pick"), ask]}),
+        httpx.Response(200, json={"messages": [msg("user", "pick"), ask, answer]})])
+    out = await chat.wait_reply("r1", timeout=5, poll=0, min_messages=2, ctx=None)
+    assert out["outcome"] == "done" and out["reply"] == "Blue"
+
+
+async def test_wait_ends_turn_after_rejected_permission(api):
+    """Live bug: a rejected permission ends the turn on the tool-calls step."""
+    api.get("/api/v1/runs/r1").mock(return_value=httpx.Response(200, json={"id": "r1", "status": "idle"}))
+    rejected = {"role": "assistant", "time_completed": 1, "metadata": {"finish": "tool-calls"},
+                "parts": [{"type": "tool", "tool_name": "write", "tool_state": {
+                    "status": "error", "error": "The user rejected permission to use this specific tool call."}}]}
+    api.get("/api/v1/runs/r1/messages").mock(return_value=httpx.Response(200, json={"messages": [msg("user", "w"), rejected]}))
+    out = await chat.wait_reply("r1", timeout=5, poll=0, min_messages=2, ctx=None)
+    assert out["outcome"] == "done" and out["tools_used"] == ["write"]
+
+
+async def test_wait_idle_stall_safety_net(api):
+    api.get("/api/v1/runs/r1").mock(return_value=httpx.Response(200, json={"id": "r1", "status": "idle"}))
+    step = {"role": "assistant", "time_completed": 1, "metadata": {"finish": "tool-calls"},
+            "parts": [{"type": "tool", "tool_name": "bash", "tool_state": {"status": "completed"}}]}
+    api.get("/api/v1/runs/r1/messages").mock(return_value=httpx.Response(200, json={"messages": [msg("user", "x"), step]}))
+    out = await chat.wait_reply("r1", timeout=5, poll=0, min_messages=2, ctx=None)
+    assert out["outcome"] == "done"
+
+
 def test_progress_message_mapping():
     """Shapes captured from the live sandbox SSE feed."""
     def ev(part, conv="r1"):

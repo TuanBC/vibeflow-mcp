@@ -332,6 +332,7 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
     outcome = "timeout"
     pending: list[dict[str, Any]] = []
     msgs: list[dict[str, Any]] = []
+    stable, last_count = 0, -1
     try:
         while time.monotonic() < deadline:
             with contextlib.suppress(ApiError):
@@ -341,13 +342,19 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
                 outcome = status
                 break
             if status in TERMINAL:
-                # A new run reports idle before the agent picks it up, and a
-                # follow-up before its turn starts: also require the turn's
-                # final assistant message to exist and be completed.
+                # A new run reports idle before the agent picks it up, a
+                # follow-up before its turn starts, and an answered question /
+                # permission before the agent resumes: require the turn's final
+                # assistant message - completed and not a mid-turn tool step.
                 msgs = await fetch_messages(run_id)
-                last_msg = msgs[-1] if msgs else {}
-                if (len(msgs) >= (min_messages or 2) and last_msg.get("role") == "assistant"
-                        and last_msg.get("time_completed")):
+                if len(msgs) >= (min_messages or 2) and turn_finished(msgs[-1]):
+                    outcome = "done"
+                    break
+                # Safety net: idle with an unchanged transcript for several polls
+                # means the agent stopped without a final answer message.
+                stable = stable + 1 if len(msgs) == last_count else 0
+                last_count = len(msgs)
+                if stable >= IDLE_STABLE_POLLS and len(msgs) >= (min_messages or 2):
                     outcome = "done"
                     break
             else:
@@ -384,6 +391,25 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
     if tools_used:
         result["tools_used"] = tools_used
     return result
+
+
+def turn_finished(msg: dict[str, Any]) -> bool:
+    """True for a completed assistant message that ends the turn. OpenCode marks
+    intermediate steps with finish='tool-calls' (the agent continues after the
+    tool result, e.g. once a question is answered) - except when the user
+    rejected a permission, which ends the turn on that step."""
+    if msg.get("role") != "assistant" or not msg.get("time_completed"):
+        return False
+    if (msg.get("metadata") or {}).get("finish") != "tool-calls":
+        return True
+    return any(p.get("type") == "tool" and isinstance(p.get("tool_state"), dict)
+               and p["tool_state"].get("status") == "error"
+               and "rejected" in str(p["tool_state"].get("error", "")).lower()
+               for p in msg.get("parts") or [])
+
+
+# Polls with an idle run and no new messages before a stalled turn counts as over.
+IDLE_STABLE_POLLS = 4
 
 
 def _current_turn(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -457,9 +483,18 @@ async def _reply(run_id: str, request_id: str, kind: str, pod_body: dict[str, An
     if pp.get("session_running"):
         sid = await run_session(run_id)
         plural = "permissions" if kind == "permission" else "questions"
-        return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/{plural}/{request_id}/reply", pod_body)
-    # Sandbox restarted since the prompt was raised: replay it from the DB.
-    return await client.post(f"/api/v1/runs/{run_id}/pending-prompts/{request_id}/replay", {"reply": replay_reply})
+        result = await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/{plural}/{request_id}/reply", pod_body)
+    else:
+        # Sandbox restarted since the prompt was raised: replay it from the DB.
+        result = await client.post(f"/api/v1/runs/{run_id}/pending-prompts/{request_id}/replay", {"reply": replay_reply})
+    # The answered prompt lingers in pending-prompts briefly; wait for it to
+    # clear so a following vibeflow_wait_for_reply doesn't report it again.
+    for _ in range(15):
+        pending = (await pending_prompts(run_id)).get("pending_prompts") or []
+        if all(p.get("id") != request_id for p in pending):
+            break
+        await asyncio.sleep(1)
+    return result
 
 
 @tool("core")

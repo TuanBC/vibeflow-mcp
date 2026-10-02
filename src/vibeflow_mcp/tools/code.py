@@ -4,6 +4,7 @@ app preview. All tools need the project's sandbox running."""
 from __future__ import annotations
 
 import posixpath
+from urllib.parse import quote
 from pathlib import Path
 from typing import Any
 
@@ -277,6 +278,23 @@ async def vibeflow_preview_status(project_id: str, log_lines: int = 50) -> Any:
     return {"ports": ports,
             "urls": [preview_url(sid, p.get("port") if isinstance(p, dict) else p) for p in ports],
             "logs": logs.get("logs", "") if isinstance(logs, dict) else logs}
+
+
+@tool("code")
+async def vibeflow_preview_link(project_id: str, port: int | None = None) -> Any:
+    """One-time sign-in link for the preview: preview URLs answer 401 until the
+    browser visits /_vibeflow_auth with a code from the platform (sets a
+    cookie). Give the link to the user to open; the code is single-use."""
+    sid = await running_session(project_id)
+    if port is None:
+        ports = (await client.get(f"/sessions/{sid}/vibeflow/snapshot")).get("preview_ports") or []
+        if not ports:
+            raise VibeFlowError("No preview is running.", code="not_found", hint="Start one with vibeflow_preview_run.")
+        port = ports[0].get("port") if isinstance(ports[0], dict) else ports[0]
+    code = (await client.post("/api/v1/preview/exchange-token")).get("code")
+    if not code:
+        raise VibeFlowError("Platform returned no preview code.", code="server_error")
+    return {"url": preview_url(sid, port), "signin_link": f"{preview_url(sid, port)}/_vibeflow_auth?code={quote(code, safe='')}"}
 
 
 @tool("code")
