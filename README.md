@@ -23,6 +23,7 @@ tests, verified against production (see [BACKLOG.md](BACKLOG.md) for what is not
 - [Installation](#installation) — [Claude Code](#claude-code) · [GitHub Copilot](#github-copilot-vs-code) ·
   [Hermes Agent](#hermes-agent) · [Microsoft 365 Copilot / ChatGPT Enterprise](#microsoft-365-copilot-and-chatgpt-enterprise)
 - [How auth works](#how-auth-works) · [CLI](#cli) · [Configuration](#configuration-env) · [Tools](#tools)
+- [Agent skills](#agent-skills) — ready-made `SKILL.md` playbooks for common workflows
 
 ## What VibeFlow can do (and how this MCP covers it)
 
@@ -168,6 +169,19 @@ uv venv .venv && uv pip install -e ".[test]"
 
 `.mcp.json` in this folder is a machine-specific Claude Code config pointing at this checkout's `.venv` (edit the
 interpreter path, or switch it to `"command": "vibeflow-mcp"` after step 1).
+
+## Agent skills
+
+[`skills/`](skills/README.md) holds 12 [Agent Skills](https://agentskills.io) (`<name>/SKILL.md`) that teach an
+agent the tool sequences, outcomes and guardrails for frequent VibeFlow work: basics, agent chat,
+specialists and workflows, review and ship, bug fix, workspace files, preview, Canvas workflows, project
+setup, kanban planning, cost and analytics, troubleshooting. Install them with:
+
+```bash
+cp -r skills/vibeflow-* ~/.claude/skills/
+```
+
+(GitHub Copilot: `<repo>/.github/skills/`; Hermes: `~/.hermes/skills/` — see [skills/README.md](skills/README.md).)
 
 ## How auth works
 
