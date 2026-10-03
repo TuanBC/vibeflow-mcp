@@ -57,7 +57,9 @@ async def vibeflow_update_project(project_id: str, name: str | None = None, desc
 
 @tool("pm", destructive=True)
 async def vibeflow_delete_project(project_id: str, confirm: bool = False) -> Any:
-    """Delete a project with its tasks and conversations. Requires confirm=true."""
+    """Delete a project. VibeFlow soft-deletes: the project is deactivated
+    (is_active=false, archived_at set) and disappears from listings, but the
+    server keeps its data. Requires confirm=true."""
     require_confirm(confirm, "delete project")
     return await client.delete(f"/api/v1/projects/{project_id}")
 

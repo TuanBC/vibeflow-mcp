@@ -10,10 +10,30 @@ Items not verified live yet, or deliberately deferred. Implemented items have un
 | B4 | Pull from remote | `vibeflow_git_sync` | Same as B2 | Push a commit to the remote outside VibeFlow, then sync |
 | B5 | Sandbox start with clone + one-off token | `vibeflow_start_session(git_token=...)` | Same as B2 | Start the B2 project's sandbox; check `clone_warning` is empty |
 | B6 | Admin toolset end to end | all `vibeflow_admin_*` | The test account is a member; only the 403 path was verified live | With a system-admin account: `vibeflow_admin_list('overview')`, a report, then one reversible write (flag / unflag a conversation) |
-| B7 | Phase 4 write tools not run live (they create, change or delete shared data) | create/update/delete project; add/update/remove member; set budget; prompt/agent/workflow template create/update/delete/import; task create/update/delete; attachment add/delete; LLM provider add/verify/update/delete; Jira configure/test/trigger/delete; SharePoint source; git credential add/delete; settings update; accept terms; delete kanban task | Bodies confirmed by the API's 422 validation, but these mutate real data | In a throwaway project: create → update → verify → delete each resource; delete the project last |
+| ~~B7~~ | ~~Phase 4 write tools not run live~~ (done, see below) (they create, change or delete shared data) | create/update/delete project; add/update/remove member; set budget; prompt/agent/workflow template create/update/delete/import; task create/update/delete; attachment add/delete; LLM provider add/verify/update/delete; Jira configure/test/trigger/delete; SharePoint source; git credential add/delete; settings update; accept terms; delete kanban task | Bodies confirmed by the API's 422 validation, but these mutate real data | In a throwaway project: create → update → verify → delete each resource; delete the project last |
 | ~~B8~~ | ~~Canvas workflow run / single step~~ — **verified live 2026-10-03**: 2-node workflow on a throwaway card; single step, full run (node 2 read node 1's output) and start-from-node-2 (node 1 skipped) | `vibeflow_run_workflow`, `vibeflow_run_workflow_step`, `vibeflow_save_workflow` | — | Done |
-| B10 | AI pull-merge and Mermaid fix not run live (start paid agent runs; pull-merge needs a git remote) | `vibeflow_ai_pull_merge`, `vibeflow_fix_mermaid` | B2 for pull-merge | Same as the verified `vibeflow_preview_fix` pattern; run on the B2 project |
+| B10 | AI pull-merge not run live (Mermaid fix: done, see below) (start paid agent runs; pull-merge needs a git remote) | `vibeflow_ai_pull_merge`, `vibeflow_fix_mermaid` | B2 for pull-merge | Same as the verified `vibeflow_preview_fix` pattern; run on the B2 project |
 | B9 | Local file sync over WebSocket (`/sessions/{id}/file-sync-ticket`) | not implemented | Binary chunked protocol; low value next to upload / download / download_workspace | Implement only if two-way live sync is needed |
+
+## Verified live in a throwaway project (2026-10-03)
+
+Project `mcp-verify-2026-10-03` was created, used and deleted (cost $0.086 of platform quota):
+- **B7 done**: project create / update / pin / delete (soft delete); AI prompt helper (fixed: structured context);
+  own membership read + role update; budget set / read / disable; prompt templates (fixed: variable objects);
+  custom agents (fixed: `userPrompt`); workflow templates create / update / export / import / delete; tasks
+  (fixed: kanban endpoints) and attachments upload / download (byte-identical) / delete; kanban card delete;
+  LLM provider add / verify / update / delete; git credential add / delete (token never echoed); Jira
+  test / configure / list (fixed: upstream 401 handling); SharePoint source; settings update + revert.
+- **B10b done**: AI Mermaid fix repaired a broken diagram.
+- **Partials done**: restore-point diff (fixed: `before_snapshot`), background a running call + stop job
+  (new `vibeflow_list_background_jobs`), goal status + stop, subagent list / thread / retry, static preview served
+  through the sign-in link, hover / definition, delete conversation, upload-workspace with automatic backup on a
+  brand-new project (fixed: default-task fallback).
+- **Deliberately not run**: accept terms (accepts a legal agreement for the user); adding / removing other people
+  as members (affects colleagues).
+- **Platform findings**: `DELETE /api/v1/tasks/{id}` and `DELETE /api/v1/kanban/tasks/{id}` return 500 for a task
+  created through the legacy `POST /api/v1/tasks` (that test task is still readable server-side, inside the deleted
+  project); project delete is a soft delete.
 
 ## Notes from verification
 
