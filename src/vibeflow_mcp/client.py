@@ -123,7 +123,8 @@ class VibeFlowClient:
     async def get_bytes(self, path: str, /, **params: Any) -> bytes:
         resp = await self.raw("GET", path, params=params, timeout=300)
         if resp.status_code >= 400:
-            raise ApiError(resp.status_code, "GET", path, self._body(resp))
+            body = self._body(resp)
+            raise ApiError(resp.status_code, "GET", path, body.get("detail", body) if isinstance(body, dict) else body)
         return resp.content
 
     async def upload(self, path: str, files: list[tuple[str, bytes]], fields: dict[str, str] | None = None) -> Any:

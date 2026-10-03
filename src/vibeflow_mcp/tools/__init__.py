@@ -1,8 +1,12 @@
 """Tool modules. Importing a module registers its tools (subject to VIBEFLOW_TOOLSETS).
 
 Toolsets:
-  core - auth, account, projects/tasks/kanban, conversations, sandbox, models, raw API
-  code - files, git changes/push, restore points, preview
+  core      - auth, account, projects/tasks/kanban (read), conversations, sandbox, models, raw API
+  code      - files, git changes/push, restore points, preview
+  pm        - project management: projects, members, budget, kanban, tasks, templates, canvas,
+              git credentials, LLM providers, Jira / SharePoint, settings
+  analytics - project cost, KPIs, code activity, report export
+  admin     - system administration (needs a system admin role)
 """
 
-from . import chat, code, core, sandbox  # noqa: F401
+from . import chat, code, core, pm, sandbox  # noqa: F401
