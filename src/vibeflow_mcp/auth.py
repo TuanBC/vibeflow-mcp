@@ -36,7 +36,10 @@ def decode_jwt(token: str) -> dict[str, Any]:
     try:
         payload = token.split(".")[1]
         payload += "=" * (-len(payload) % 4)
-        return json.loads(base64.urlsafe_b64decode(payload))
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        if not isinstance(claims, dict):
+            raise ValueError("JWT payload is not an object")
+        return claims
     except (IndexError, ValueError) as exc:
         raise AuthRequired("Stored access token is not a valid JWT.") from exc
 
@@ -87,24 +90,41 @@ class KeyringBackend:
         if not count:
             return None
         parts = [self._kr.get_password(config.KEYRING_SERVICE, f"tokens:{i}") or "" for i in range(int(count))]
-        return json.loads("".join(parts))
+        try:
+            return json.loads("".join(parts))
+        except ValueError:
+            log.warning("Stored VibeFlow token in the keyring is corrupt; a new login is needed.")
+            return None
 
     def write(self, data: dict[str, Any]) -> None:
+        # Write the new chunks before switching the count, then drop surplus old
+        # chunks, so a failure midway never leaves the store empty.
         blob = json.dumps(data, separators=(",", ":"))
         chunks = [blob[i:i + self.CHUNK] for i in range(0, len(blob), self.CHUNK)]
-        self.delete()
+        old_count = int(self._kr.get_password(config.KEYRING_SERVICE, "tokens:count") or 0)
         for i, chunk in enumerate(chunks):
             self._kr.set_password(config.KEYRING_SERVICE, f"tokens:{i}", chunk)
         self._kr.set_password(config.KEYRING_SERVICE, "tokens:count", str(len(chunks)))
+        for i in range(len(chunks), old_count):
+            self._delete_key(f"tokens:{i}")
+
+    def _delete_key(self, key: str) -> bool:
+        try:
+            self._kr.delete_password(config.KEYRING_SERVICE, key)
+            return True
+        except Exception as exc:
+            if self._kr.get_password(config.KEYRING_SERVICE, key) is not None:
+                log.warning("Could not delete keyring entry %s: %s", key, exc)
+                return False
+            return True  # already absent
 
     def delete(self) -> None:
         count = self._kr.get_password(config.KEYRING_SERVICE, "tokens:count")
         keys = ["tokens:count"] + [f"tokens:{i}" for i in range(int(count or 0))]
-        for key in keys:
-            try:
-                self._kr.delete_password(config.KEYRING_SERVICE, key)
-            except Exception:
-                pass
+        failed = [k for k in keys if not self._delete_key(k)]
+        if failed:
+            raise AuthRequired("Could not remove the stored token from the OS keyring.", code="keyring_error",
+                               hint="Remove the vibeflow-mcp entries in your OS credential manager.")
 
 
 def _keyring_usable() -> bool:
@@ -114,7 +134,8 @@ def _keyring_usable() -> bool:
 
         backend = keyring.get_keyring()
         return not isinstance(backend, fail.Keyring) and getattr(backend, "priority", 0) > 0
-    except Exception:
+    except Exception as exc:
+        log.warning("OS keyring unavailable (%s); storing the token in %s", exc, config.TOKEN_FILE)
         return False
 
 
@@ -167,9 +188,19 @@ class TokenStore:
         self._data, self._loaded = data, True
         return data
 
-    def clear(self) -> None:
-        self.backend.delete()
+    def reload(self) -> None:
+        """Forget the in-memory copy so the next load() re-reads storage."""
+        self._loaded = False
+
+    def replace(self, tokens: dict[str, Any], user: dict[str, Any] | None) -> dict[str, Any]:
+        """Store tokens for a (possibly different) account without carrying over
+        the previous refresh token or user."""
         self._data, self._loaded = None, True
+        return self.save(tokens, user)
+
+    def clear(self) -> None:
+        self._data, self._loaded = None, True
+        self.backend.delete()
 
     @property
     def access_token(self) -> str | None:
@@ -215,6 +246,9 @@ async def refresh_tokens(store: TokenStore, stale_token: str | None = None) -> b
     coroutine refreshed in the meantime and we reuse its result."""
     stale_token = stale_token or store.access_token
     async with store.refresh_lock:
+        # Another process sharing this token store may have rotated the tokens:
+        # re-read storage before deciding (its refresh token supersedes ours).
+        store.reload()
         if store.access_token != stale_token:
             return True
         data = store.load()
@@ -231,9 +265,14 @@ async def refresh_tokens(store: TokenStore, stale_token: str | None = None) -> b
             log.warning("Token refresh request failed: %s", exc)
             return False
         if resp.status_code != 200:
+            log.warning("Token refresh rejected: HTTP %s %s", resp.status_code, resp.text[:200])
             return False
-        body = resp.json()
-        if not body.get("access_token"):
+        try:
+            body = resp.json()
+        except ValueError:
+            log.warning("Token refresh returned a non-JSON body")
+            return False
+        if not isinstance(body, dict) or not body.get("access_token"):
             return False
         store.save(body, body.get("user"))
         return True
@@ -298,7 +337,7 @@ async def browser_login(store: TokenStore, timeout: int | None = None, headless:
                             found = None  # mid-navigation
                         exp = decode_jwt(found["tokens"]["access_token"]).get("exp", 0) if found else 0
                         if found and exp - time.time() > config.REFRESH_MARGIN_SECONDS:
-                            saved = store.save(found["tokens"], found.get("user"))
+                            saved = store.replace(found["tokens"], found.get("user"))
                             return {"user": saved.get("user"), **store.status()}
                     elif headless and "login.microsoftonline.com" in p.url and email and p.url not in clicked_tile:
                         # "Pick an account" screen: choose the remembered account.

@@ -33,8 +33,8 @@ async def vibeflow_code_intel(project_id: str, method: LspMethod, file: str, lin
     hover at a position (0-based line and character), diagnostics for the
     file, or document-symbol (outline). file is relative to /workspace."""
     sid = await _sandbox(project_id)
-    data = await client.post(f"/sessions/{sid}/vibeflow/lsp/{method}",
-                             {"workdir": WORKDIR, "file": file, "line": line, "character": character})
+    data = await client.request("POST", f"/sessions/{sid}/vibeflow/lsp/{method}", soft_ok=True,
+                                json={"workdir": WORKDIR, "file": file, "line": line, "character": character})
     if isinstance(data, dict) and data.get("ok") is False:
         raise VibeFlowError(data.get("error") or f"LSP {method} failed", code="bad_request",
                             hint="The language server may still be starting; retry in a few seconds.")
@@ -100,7 +100,7 @@ async def _goal_target(run_id: str) -> tuple[str, str]:
     return run["session_id"], run["code_session_id"]
 
 
-@tool("advanced", destructive=True)
+@tool("advanced")
 async def vibeflow_goal_stop(run_id: str) -> Any:
     """Stop a conversation's goal loop (the agent stops re-trying)."""
     sid, oc_session = await _goal_target(run_id)
@@ -135,7 +135,7 @@ async def vibeflow_sandbox_mcp_servers(project_id: str) -> Any:
     sid = await _sandbox(project_id)
     data = await client.get(f"/sessions/{sid}/mcp", directory=WORKDIR)
     if isinstance(data, dict):
-        return [{"name": k, "status": (v or {}).get("status", "connected") if isinstance(v, dict) else v}
+        return [{"name": k, "status": (v or {}).get("status", "connected") if isinstance(v, dict) else v}  # SPA default
                 for k, v in data.items()]
     return data
 
@@ -172,7 +172,7 @@ async def vibeflow_background_tool_call(run_id: str, call_id: str) -> Any:
     return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/jobs/background", {"callID": call_id})
 
 
-@tool("advanced", destructive=True)
+@tool("advanced")
 async def vibeflow_stop_job(run_id: str, job_id: str) -> Any:
     """Stop a background shell job of a conversation (job_id from vibeflow_list_background_jobs)."""
     sid = await run_session(run_id)

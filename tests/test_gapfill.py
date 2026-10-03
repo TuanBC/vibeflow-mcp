@@ -102,7 +102,9 @@ async def test_workflow_batches_summary(api):
 # ------------------------------------------------------------------- git / AI fixes
 
 async def test_git_status_and_ai_helpers(api):
-    status = api.get("/api/v1/changes/status").mock(return_value=httpx.Response(200, json={"tasks": [{"task_id": "t1", "behind": 2}]}))
+    status = api.get("/api/v1/changes/status").mock(return_value=httpx.Response(200, json={"tasks": [
+        {"task_id": "t1", "behind": 2}, {"task_id": "other-project-task", "behind": 9}]}))
+    api.get("/api/v1/tasks").mock(return_value=httpx.Response(200, json=[{"id": "t1"}]))
     assert payload(await code.vibeflow_git_status("p1", fetch_remote=True)) == [{"task_id": "t1", "behind": 2}]
     assert status.calls.last.request.url.params["fetch"] == "1"
     merge = api.post("/api/v1/preview/pull-merge").mock(return_value=httpx.Response(200, json={"run_id": "m1"}))

@@ -9,8 +9,8 @@ from typing import Any, Literal
 import httpx
 
 from .. import config
-from ..app import client, store, tool
-from ..auth import browser_login
+from ..app import client, require_confirm, store, tool
+from ..auth import browser_login, decode_jwt
 from ..errors import VibeFlowError
 
 # ---------------------------------------------------------------------- auth
@@ -28,7 +28,9 @@ async def vibeflow_login(timeout_seconds: int = 300) -> Any:
 async def vibeflow_set_token(access_token: str, refresh_token: str = "") -> Any:
     """Manually import a VibeFlow token (from the browser's
     localStorage['vibeflow-auth'].state.tokens) instead of vibeflow_login."""
-    store.save({"access_token": access_token, "refresh_token": refresh_token})
+    claims = decode_jwt(access_token)  # rejects non-JWT input before anything is stored
+    store.replace({"access_token": access_token, "refresh_token": refresh_token},
+                  {"id": claims.get("sub"), "email": claims.get("email"), "display_name": None})
     return store.status()
 
 
@@ -39,15 +41,16 @@ async def vibeflow_auth_status() -> Any:
     return store.status()
 
 
-@tool("core", destructive=True)
+@tool("core")
 async def vibeflow_logout() -> Any:
     """Revoke the VibeFlow session server-side and delete the stored token."""
+    revoked = True
     try:
         await client.post("/api/v1/auth/logout")
-    except Exception:
-        pass
+    except VibeFlowError:
+        revoked = False
     store.clear()
-    return "Logged out."
+    return "Logged out." if revoked else "Local token deleted (server-side revoke failed; the token expires on its own)."
 
 
 @tool("core", read_only=True)
@@ -154,6 +157,8 @@ async def vibeflow_read_docs(path: str, max_chars: int = 12000) -> Any:
     body = re.sub(r"</(p|h[1-6]|li|tr|div|pre)>", "\n", body, flags=re.I)
     text = re.sub(r"<[^>]+>", "", body)
     text = re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n\n", unescape(text))).strip()
+    if not text:
+        raise VibeFlowError(f"No readable content at {path}.", code="not_found", hint="Use vibeflow_search_docs for valid paths.")
     return text[:max_chars] + ("\n… (truncated)" if len(text) > max_chars else "")
 
 
@@ -166,16 +171,20 @@ async def vibeflow_get_quota() -> Any:
     return await client.get("/api/v1/users/me/platform-quota")
 
 
-@tool("core")
+@tool("core", destructive=True)
 async def vibeflow_api(
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"],
     path: str,
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
+    confirm: bool = False,
 ) -> Any:
     """Escape hatch: call any VibeFlow API path (e.g. '/api/v1/projects/{id}/members'
     or '/sessions/{sid}/vibeflow/snapshot') with the stored token. Prefer the
-    dedicated tools; never use this to bypass a confirm=true requirement."""
+    dedicated tools. Any method other than GET can change or delete data and
+    requires confirm=true (ask the user first)."""
+    if method != "GET":
+        require_confirm(confirm, f"{method} {path} via the raw API")
     if not path.startswith("/"):
         path = "/" + path
-    return await client.request(method, path, params=params, json=body)
+    return await client.request(method, path, params=params, json=body, soft_ok=True)

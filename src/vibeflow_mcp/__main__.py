@@ -20,6 +20,9 @@ def _contract_check(update: bool) -> int:
 
     current = contract.extract(asyncio.run(contract.fetch_bundle()))
     added, removed = contract.diff(current, contract.read_lock())
+    if not current:
+        print("Extracted 0 endpoints - the bundle format changed or the fetch failed; lock left unchanged.")
+        return 2
     if update:
         contract.write_lock(current)
         print(f"endpoints.lock updated ({len(current)} endpoints).")

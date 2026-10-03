@@ -199,9 +199,11 @@ async def vibeflow_list_branches(project_id: str) -> Any:
         raise
 
 
-@tool("code")
-async def vibeflow_checkout_branch(project_id: str, branch: str) -> Any:
-    """Switch the workspace to another git branch."""
+@tool("code", destructive=True)
+async def vibeflow_checkout_branch(project_id: str, branch: str, confirm: bool = False) -> Any:
+    """Switch the workspace to another git branch (changes the files the agent
+    works on). Requires confirm=true."""
+    require_confirm(confirm, f"checkout branch {branch}")
     return await client.post("/api/v1/files/checkout", {"task_id": await default_task(project_id), "branch": branch})
 
 
@@ -271,7 +273,11 @@ async def vibeflow_git_status(project_id: str, fetch_remote: bool = False) -> An
     dirty files. fetch_remote=true runs a git fetch first (slower)."""
     await running_session(project_id)
     data = await client.get("/api/v1/changes/status", fetch=1 if fetch_remote else 0)
-    return data.get("tasks", data) if isinstance(data, dict) else data
+    rows = data.get("tasks", []) if isinstance(data, dict) else data
+    tasks = await client.get("/api/v1/tasks", project_id=project_id)
+    tasks = tasks.get("tasks", []) if isinstance(tasks, dict) else tasks
+    ids = {t.get("id") for t in tasks if isinstance(t, dict)} | {await default_task(project_id)}
+    return [r for r in rows if r.get("task_id") in ids]
 
 
 @tool("code")
@@ -294,9 +300,10 @@ async def vibeflow_fix_mermaid(project_id: str, file_path: str, error_message: s
                                                              "model": await _preview_model(model)})
 
 
-@tool("code")
-async def vibeflow_git_sync(project_id: str) -> Any:
-    """Pull new commits from the remote branch into the workspace."""
+@tool("code", destructive=True)
+async def vibeflow_git_sync(project_id: str, confirm: bool = False) -> Any:
+    """Pull new commits from the remote branch into the workspace. Requires confirm=true."""
+    require_confirm(confirm, "pull remote commits into the workspace")
     data = await client.post("/api/v1/changes/git-sync", await workspace(project_id))
     return {"result": data.get("result"), "pulled": data.get("pulled_count"), "status": data.get("status")}
 
@@ -309,8 +316,9 @@ async def _rp_call(run_id: str, method: str, suffix: str, body: Any = None) -> A
         return await client.request(method, f"/sessions/{sid}/vibeflow/runs/{run_id}{suffix}", json=body)
     except ApiError as exc:
         if exc.code == "not_found":
-            raise VibeFlowError("Restore points exist only for conversations run in the current sandbox "
-                                "session (the sandbox was restarted since).", code="not_found") from exc
+            raise VibeFlowError("Restore point / conversation not found in the running sandbox: either the id "
+                                "is wrong or the conversation ran in an earlier sandbox session (restarted since).",
+                                code="not_found") from exc
         raise
 
 

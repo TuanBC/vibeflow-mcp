@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json as jsonlib
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +18,8 @@ from .errors import ApiError, AuthRequired, VibeFlowError
 
 log = logging.getLogger(__name__)
 
+RELOGIN_COOLDOWN_SECONDS = 120
+
 
 @dataclass
 class SseEvent:
@@ -27,6 +31,8 @@ class SseEvent:
 class VibeFlowClient:
     def __init__(self, store: TokenStore | None = None, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.store = store or TokenStore()
+        self._relogin_lock = asyncio.Lock()
+        self._last_relogin_failure = -float(RELOGIN_COOLDOWN_SECONDS)
         self._http = httpx.AsyncClient(
             base_url=config.API_URL,
             timeout=httpx.Timeout(60, connect=15),
@@ -40,16 +46,25 @@ class VibeFlowClient:
     # ------------------------------------------------------------ auth
 
     async def _recover(self, stale_token: str | None) -> bool:
-        """Refresh, then fall back to a silent headless SSO login."""
+        """Refresh, then fall back to a silent headless SSO login. Browser logins
+        are serialized (they share one browser profile) and not retried for a
+        cooldown period after a failure."""
         if await refresh_tokens(self.store, stale_token):
             return True
-        if config.SILENT_RELOGIN and self.store.email:
+        if not (config.SILENT_RELOGIN and self.store.email):
+            return False
+        async with self._relogin_lock:
+            if self.store.access_token != stale_token:
+                return True  # a concurrent caller already logged in
+            if time.monotonic() - self._last_relogin_failure < RELOGIN_COOLDOWN_SECONDS:
+                return False
             try:
                 await browser_login(self.store, timeout=config.SILENT_LOGIN_TIMEOUT_SECONDS, headless=True)
                 return True
             except Exception as exc:
-                log.info("Silent re-login failed: %s", exc)
-        return False
+                self._last_relogin_failure = time.monotonic()
+                log.warning("Silent re-login failed (%s): %s", type(exc).__name__, exc)
+                return False
 
     async def ensure_token(self) -> str:
         if not self.store.access_token:
@@ -100,12 +115,20 @@ class VibeFlowClient:
                 pass
         return resp.text
 
-    async def request(self, method: str, path: str, **kw: Any) -> Any:
+    async def request(self, method: str, path: str, *, soft_ok: bool = False, **kw: Any) -> Any:
+        """Send a request and return the parsed body. Many VibeFlow endpoints
+        answer HTTP 200 with {"success": false} / {"ok": false} on failure;
+        those raise operation_failed unless soft_ok=True (for endpoints whose
+        job is to report a failure, e.g. credential verification)."""
         resp = await self.raw(method, path, **kw)
         body = self._body(resp)
         if resp.status_code >= 400:
             detail = body.get("detail", body) if isinstance(body, dict) else body
             raise ApiError(resp.status_code, method.upper(), path, detail)
+        if not soft_ok and isinstance(body, dict) and (body.get("success") is False or body.get("ok") is False):
+            message = body.get("message") or body.get("error") or body.get("detail") or "operation failed"
+            raise VibeFlowError(f"{method.upper()} {path} reported failure: {message}", code="operation_failed",
+                                detail=body)
         return body
 
     async def get(self, path: str, /, **params: Any) -> Any:
@@ -152,7 +175,8 @@ class VibeFlowClient:
             event, data_lines, eid = "", [], None
             async for line in resp.aiter_lines():
                 if line == "":
-                    if event and data_lines:
+                    if data_lines:
+                        event = event or "message"  # SSE default event type
                         raw = "\n".join(data_lines)
                         try:
                             data: Any = jsonlib.loads(raw)

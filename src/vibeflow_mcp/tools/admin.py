@@ -86,16 +86,18 @@ UserAction = Literal["approve", "revoke_approval", "activate", "deactivate", "se
 
 @tool("admin", destructive=True)
 async def vibeflow_admin_user(user_id: str, action: UserAction, system_role_id: str | None = None,
-                              confirm: bool = False) -> Any:
+                              clear_role: bool = False, confirm: bool = False) -> Any:
     """Manage a user: approve / revoke_approval (whitelist), activate /
     deactivate, or set_role (system_role_id from vibeflow_list_roles('system'),
-    None to clear). Requires confirm=true."""
+    or clear_role=true to remove it). Requires confirm=true."""
     require_confirm(confirm, f"admin user {action}")
     if action in ("approve", "revoke_approval"):
         return await _admin("PUT", f"/users/{user_id}/whitelist", json={"is_whitelisted": action == "approve"})
     if action in ("activate", "deactivate"):
         return await _admin("PUT", f"/users/{user_id}/activate", json={"is_active": action == "activate"})
-    return await _admin("PUT", f"/users/{user_id}/role", json={"system_role_id": system_role_id})
+    if not system_role_id and not clear_role:
+        raise VibeFlowError("set_role needs system_role_id (or clear_role=true).", code="bad_request")
+    return await _admin("PUT", f"/users/{user_id}/role", json={"system_role_id": None if clear_role else system_role_id})
 
 
 @tool("admin", destructive=True)
@@ -149,6 +151,8 @@ async def vibeflow_admin_provider(action: ProviderAction, provider_id: str | Non
     if action == "delete":
         return await _admin("DELETE", base)
     if action == "set_shared_key":
+        if not api_key:
+            raise VibeFlowError("api_key is required for set_shared_key.", code="bad_request")
         return await _admin("PATCH", f"{base}/shared-key", json={"api_key": api_key})
     return await _admin("POST", f"{base}/{action.replace('_', '-')}", json={})
 

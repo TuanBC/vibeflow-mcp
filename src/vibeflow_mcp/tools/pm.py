@@ -489,8 +489,11 @@ async def vibeflow_add_llm_provider(project_id: str, provider: str, credentials:
 async def vibeflow_verify_llm_provider(project_id: str, provider_id: str,
                                        credentials: dict[str, Any] | None = None) -> Any:
     """Check a provider's credentials and list the models it exposes."""
-    return await client.post(f"/api/v1/projects/{project_id}/llm-providers/{provider_id}/verify",
-                             {"credentials": credentials})
+    result = await client.request("POST", f"/api/v1/projects/{project_id}/llm-providers/{provider_id}/verify",
+                                  json={"credentials": credentials}, soft_ok=True)
+    if isinstance(result, dict):
+        result["valid"] = bool(result.get("success"))
+    return result
 
 
 @tool("pm", idempotent=True)
@@ -544,11 +547,14 @@ async def vibeflow_configure_jira_sync(project_id: str, pat: str, jira_project_k
     body = {**_clean(pat=pat, jira_project_key=jira_project_key, email=email, site_id=site_id), **(extra or {})}
     try:
         await client.get(f"/api/v1/projects/{project_id}/jira-sync")
-        return await client.put(f"/api/v1/projects/{project_id}/jira-sync", body)
+        exists = True
     except VibeFlowError as exc:
         if exc.code != "not_found":
             raise
-        return await client.post(f"/api/v1/projects/{project_id}/jira-sync", body)
+        exists = False
+    if exists:
+        return await client.put(f"/api/v1/projects/{project_id}/jira-sync", body)
+    return await client.post(f"/api/v1/projects/{project_id}/jira-sync", body)
 
 
 @tool("pm")

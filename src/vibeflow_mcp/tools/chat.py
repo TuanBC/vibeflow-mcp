@@ -21,6 +21,7 @@ Mode = Literal["build", "plan"]
 TERMINAL = {"idle", "completed", "succeeded", "failed", "aborted", "cancelled", "error", "closed", "stopped"}
 FAILED = {"failed", "aborted", "cancelled", "error"}
 STEP_OPEN = {"pending", "queued", "running", "retrying", "starting"}
+MAX_POLL_ERRORS = 5
 
 # Prompt the SPA sends when forking a conversation (the platform attaches the
 # source transcript as conversation.md).
@@ -299,7 +300,7 @@ async def vibeflow_send_message(
     vibeflow_start_conversation; model defaults to the conversation's model).
     Returns min_messages to pass to vibeflow_wait_for_reply."""
     run = await run_info(run_id)
-    attached = await upload_attachments(run["session_id"], attachments) if attachments else []
+    attached = await upload_attachments(await run_session(run_id), attachments) if attachments else []
     body = await build_body(prompt, model or run.get("model"), provider_scope, mode, agent=agent,
                             skill=skill, attached=attached, thinking=thinking)
     before = len(await fetch_messages(run_id))
@@ -375,14 +376,30 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
     pending: list[dict[str, Any]] = []
     msgs: list[dict[str, Any]] = []
     stable, last_count = 0, -1
+    errors = 0
     try:
         while time.monotonic() < deadline:
-            with contextlib.suppress(ApiError):
+            try:
                 run = await run_info(run_id)
+                errors = 0
+            except ApiError:
+                # Tolerate transient blips; persistent failures must not turn into
+                # a misleading "timeout, still working".
+                errors += 1
+                if errors >= MAX_POLL_ERRORS:
+                    raise
+                await asyncio.sleep(poll)
+                continue
             status = (run.get("status") or "").lower()
             if status in FAILED:
-                outcome = status
-                break
+                # A previous turn's failed/aborted status lingers until the new
+                # turn starts: only accept it once the expected messages exist.
+                msgs = await fetch_messages(run_id)
+                if not min_messages or len(msgs) >= min_messages:
+                    outcome = status
+                    break
+                await asyncio.sleep(poll)
+                continue
             # Canvas workflow runs: never finish while a node is still queued or running.
             steps_open = any((s.get("status") or "") in STEP_OPEN for s in run.get("steps") or [])
             if status in TERMINAL and not steps_open:
@@ -391,23 +408,28 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
                 # permission before the agent resumes: require the turn's final
                 # assistant message - completed and not a mid-turn tool step.
                 msgs = await fetch_messages(run_id)
-                if len(msgs) >= (min_messages or 2) and turn_finished(msgs[-1]):
+                enough = len(msgs) >= (min_messages or 2)
+                if enough and turn_finished(msgs[-1]):
                     outcome = "done"
                     break
-                # Safety net: idle with an unchanged transcript for several polls
-                # means the agent stopped without a final answer message.
+                # Safety net: idle with an unchanged transcript (ending in an
+                # assistant message) for several polls means the agent stopped
+                # without a final answer.
                 stable = stable + 1 if len(msgs) == last_count else 0
                 last_count = len(msgs)
-                if stable >= IDLE_STABLE_POLLS and len(msgs) >= (min_messages or 2):
+                if stable >= IDLE_STABLE_POLLS and enough and msgs[-1].get("role") == "assistant":
                     outcome = "done"
                     break
             else:
-                with contextlib.suppress(ApiError):
+                stable, last_count = 0, -1
+                try:
                     pp = await pending_prompts(run_id)
-                    if pp.get("pending_prompts"):
-                        pending = [_summarize_prompt(p) for p in pp["pending_prompts"]]
-                        outcome = "needs_input"
-                        break
+                except ApiError:
+                    pp = {}
+                if pp.get("pending_prompts"):
+                    pending = [_summarize_prompt(p) for p in pp["pending_prompts"]]
+                    outcome = "needs_input"
+                    break
             await asyncio.sleep(poll)
     finally:
         stop.set()
@@ -415,8 +437,10 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
             streamer.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await streamer
-    if not msgs:
-        msgs = await fetch_messages(run_id)
+    if outcome != "done" or not msgs:
+        # Never report a reply from a stale snapshot taken before the turn started.
+        with contextlib.suppress(ApiError):
+            msgs = await fetch_messages(run_id)
     turn = _current_turn(msgs)
     texts = [p["text"].strip() for m in turn for p in m.get("parts") or [] if p.get("type") == "text" and (p.get("text") or "").strip()]
     result: dict[str, Any] = {"run_id": run_id, "outcome": outcome, "status": run.get("status"),
@@ -539,9 +563,10 @@ async def _reply(run_id: str, request_id: str, kind: str, pod_body: dict[str, An
     for _ in range(15):
         pending = (await pending_prompts(run_id)).get("pending_prompts") or []
         if all(p.get("id") != request_id for p in pending):
-            break
+            return result
         await asyncio.sleep(1)
-    return result
+    return {"result": result, "warning": "The prompt is still listed as pending after 15 s; check "
+                                          "vibeflow_pending_prompts before waiting for the agent."}
 
 
 @tool("core")
@@ -564,7 +589,7 @@ async def vibeflow_answer_question(run_id: str, request_id: str, answers: list[l
 
 # ------------------------------------------------------- conversation control
 
-@tool("core", destructive=True)
+@tool("core")
 async def vibeflow_abort(run_id: str, subagent: str | None = None) -> Any:
     """Stop the agent's current turn in a conversation, or only one of its
     subagents (subagent session id from vibeflow_list_subagents)."""
@@ -602,7 +627,7 @@ async def vibeflow_fork_conversation(run_id: str, model: str | None = None) -> A
 async def vibeflow_rename_conversation(run_id: str, title: str) -> Any:
     """Rename a conversation."""
     run = await client.patch(f"/api/v1/runs/{run_id}/title", {"title": title})
-    return {"id": run.get("id"), "title": run.get("session_title", title)}
+    return {"id": run.get("id"), "title": run.get("session_title")}
 
 
 @tool("core", idempotent=True)
