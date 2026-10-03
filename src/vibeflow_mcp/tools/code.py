@@ -88,6 +88,77 @@ async def vibeflow_upload_file(project_id: str, local_path: str, dest_dir: str =
     return {"uploaded": dest, "bytes": src.stat().st_size}
 
 
+SKIP_DIRS = {"node_modules", ".git", "build", "dist", ".next", ".venv", "venv", "__pycache__", ".cache",
+             ".pytest_cache", ".mypy_cache", ".turbo", "target"}
+
+
+def _zip_folder(folder: Path) -> bytes:
+    """Zip a local folder like the SPA's folder upload (skips deps / builds / caches)."""
+    import io
+    import os
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(folder):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            for name in files:
+                full = Path(root) / name
+                zf.write(full, full.relative_to(folder).as_posix())
+    return buf.getvalue()
+
+
+@tool("code", destructive=True)
+async def vibeflow_upload_workspace(project_id: str, local_path: str, replace_workspace: bool = False,
+                                    confirm: bool = False) -> Any:
+    """REPLACE THE ENTIRE sandbox workspace with a local .zip or folder (the
+    'Upload Workspace' step for new Local projects). Every existing file in
+    /workspace is removed and git is re-initialised - this is NOT an
+    add-files operation (use vibeflow_upload_file / vibeflow_write_file for
+    that). Folders are zipped skipping node_modules / .git / build / caches.
+    Before replacing, the current workspace is downloaded to
+    ~/.vibeflow-mcp/backups/ (the platform export omits .env, .gitignore and
+    .git). Requires replace_workspace=true AND confirm=true."""
+    if not replace_workspace:
+        raise VibeFlowError("vibeflow_upload_workspace replaces ALL files in the workspace.", code="confirmation_required",
+                            hint="To add files use vibeflow_upload_file. To really replace the workspace, confirm with "
+                                 "the user and pass replace_workspace=true and confirm=true.")
+    require_confirm(confirm, "replace the whole workspace")
+    src = Path(local_path).expanduser()
+    if src.is_dir():
+        name, data = f"{src.name or 'workspace'}.zip", _zip_folder(src)
+    elif src.is_file() and src.suffix.lower() == ".zip":
+        name, data = src.name, src.read_bytes()
+    else:
+        raise VibeFlowError(f"Expected a folder or .zip file: {local_path}", code="bad_request")
+    sid = await running_session(project_id)
+    backup = await _backup_workspace(project_id)
+    staged = await client.upload(f"/sessions/{sid}/vibeflow/file/upload", [(name, data)], {"scope": "workspace"})
+    pod_path = staged.get("path") or (staged.get("paths") or [None])[0] if isinstance(staged, dict) else None
+    if not pod_path:
+        raise VibeFlowError("Sandbox upload returned no path.", code="server_error")
+    result = await client.request("POST", f"/api/v1/sessions/{sid}/upload-workspace", data={"pod_path": pod_path},
+                                  timeout=300)
+    return {"uploaded": name, "bytes": len(data), "result": result, "previous_workspace_backup": backup}
+
+
+async def _backup_workspace(project_id: str) -> str:
+    """Download the current workspace zip; abort the replace if that fails."""
+    import time
+
+    from .. import config
+
+    try:
+        data = await client.get_bytes("/api/v1/files/download-workspace", task_id=await default_task(project_id))
+    except VibeFlowError as exc:
+        raise VibeFlowError(f"Could not back up the current workspace ({exc.message}); nothing was replaced.",
+                            code="backup_failed") from exc
+    dest = config.HOME / "backups" / f"workspace-{project_id[:8]}-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return str(dest)
+
+
 @tool("code", destructive=True)
 async def vibeflow_delete_file(project_id: str, path: str, confirm: bool = False) -> Any:
     """Delete a file or directory in the workspace. Requires confirm=true."""
@@ -193,6 +264,35 @@ async def vibeflow_push_changes(project_id: str, title: str, body: str = "", pat
     if target_branch:
         payload["target_branch"] = target_branch
     return await client.post("/api/v1/changes/push", payload)
+
+
+@tool("code", read_only=True)
+async def vibeflow_git_status(project_id: str, fetch_remote: bool = False) -> Any:
+    """Per-task git status in the sandbox: branch, ahead / behind origin,
+    dirty files. fetch_remote=true runs a git fetch first (slower)."""
+    await running_session(project_id)
+    data = await client.get("/api/v1/changes/status", fetch=1 if fetch_remote else 0)
+    return data.get("tasks", data) if isinstance(data, dict) else data
+
+
+@tool("code")
+async def vibeflow_ai_pull_merge(project_id: str, branch: str, behind_count: int = 1,
+                                 model: str | None = None) -> Any:
+    """Ask an agent to pull the remote branch and resolve merge conflicts
+    (the 'behind origin' action). Uses LLM tokens; returns the run_id."""
+    return await client.post("/api/v1/preview/pull-merge", {**await workspace(project_id), "branch": branch,
+                                                            "behind_count": behind_count,
+                                                            "model": await _preview_model(model)})
+
+
+@tool("code")
+async def vibeflow_fix_mermaid(project_id: str, file_path: str, error_message: str,
+                               model: str | None = None) -> Any:
+    """Ask an agent to repair a Mermaid diagram that fails to render in a
+    workspace file. Uses LLM tokens; returns the run_id."""
+    return await client.post("/api/v1/preview/mermaid-fix", {**await workspace(project_id), "file_path": file_path,
+                                                             "error_message": error_message,
+                                                             "model": await _preview_model(model)})
 
 
 @tool("code")

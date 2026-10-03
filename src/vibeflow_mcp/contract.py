@@ -19,6 +19,8 @@ _PARAM = re.compile(r"\$\{[^}]*\}?")
 _CLIENT_CALL = re.compile(r"\.(get|post|put|patch|delete|postForm)\(\s*([`\"])((?:/api/v1|/sessions/)[^`\"]*)\2")
 # fetch(`${base}/api/v1/...`, {method:"POST"
 _FETCH_CALL = re.compile(r"\(\s*`\$\{[^}]+\}(/api/v1[^`]*)`\s*,\s*\{[^}]{0,80}?method:\s*\"(\w+)\"")
+# low-level helper with explicit method: Dr(`/api/v1/...`, {method:"PATCH", ...})
+_HELPER_CALL = re.compile(r"(?<![.\w$])[A-Za-z_$][\w$]{0,3}\(\s*([`\"])((?:/api/v1|/sessions/)[^`\"]*)\1\s*,\s*\{[^}]{0,120}?method:\s*\"(\w+)\"")
 
 
 def normalize(path: str) -> str:
@@ -32,6 +34,8 @@ def extract(bundle: str) -> list[str]:
     for method, _, path in _CLIENT_CALL.findall(bundle):
         found.add(f"{'POST' if method == 'postForm' else method.upper()} {normalize(path)}")
     for path, method in _FETCH_CALL.findall(bundle):
+        found.add(f"{method.upper()} {normalize(path)}")
+    for _, path, method in _HELPER_CALL.findall(bundle):
         found.add(f"{method.upper()} {normalize(path)}")
     return sorted(found)
 

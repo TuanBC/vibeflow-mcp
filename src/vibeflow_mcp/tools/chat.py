@@ -20,6 +20,7 @@ ProviderScope = Literal["auto", "platform", "personal", "project"]
 Mode = Literal["build", "plan"]
 TERMINAL = {"idle", "completed", "succeeded", "failed", "aborted", "cancelled", "error", "closed", "stopped"}
 FAILED = {"failed", "aborted", "cancelled", "error"}
+STEP_OPEN = {"pending", "queued", "running", "retrying", "starting"}
 
 # Prompt the SPA sends when forking a conversation (the platform attaches the
 # source transcript as conversation.md).
@@ -148,17 +149,58 @@ async def vibeflow_get_transcript(run_id: str) -> Any:
     return await client.get(f"/api/v1/runs/{run_id}/transcript.md")
 
 
-async def fetch_messages(run_id: str) -> list[dict[str, Any]]:
-    data = await client.get(f"/api/v1/runs/{run_id}/messages")
+async def fetch_messages(run_id: str, subagent: str | None = None) -> list[dict[str, Any]]:
+    data = await client.get(f"/api/v1/runs/{run_id}/messages", subagent=subagent)
     return data.get("messages", []) if isinstance(data, dict) else data
 
 
 @tool("core", read_only=True)
-async def vibeflow_get_messages(run_id: str, last_n: int = 20, raw: bool = False) -> Any:
+async def vibeflow_get_messages(run_id: str, last_n: int = 20, raw: bool = False,
+                                subagent: str | None = None) -> Any:
     """A conversation's messages rendered as text (text + tool calls). raw=true
-    returns the structured JSON (parts, tokens, metadata)."""
-    msgs = await fetch_messages(run_id)
+    returns the structured JSON (parts, tokens, metadata). subagent: a
+    subagent session id from vibeflow_list_subagents to read its own thread."""
+    msgs = await fetch_messages(run_id, subagent)
     return msgs[-last_n:] if raw else render.messages(msgs, last_n)
+
+
+@tool("core", read_only=True)
+async def vibeflow_list_subagents(run_id: str) -> Any:
+    """Subagents the agent delegated to (the 'task' tool): session id,
+    description, agent type and status. Read one with
+    vibeflow_get_messages(subagent=...)."""
+    out = []
+    for m in await fetch_messages(run_id):
+        for p in m.get("parts") or []:
+            state = p.get("tool_state") if isinstance(p.get("tool_state"), dict) else {}
+            meta = state.get("metadata") or {}
+            sid = meta.get("sessionId") or meta.get("sessionID")
+            if p.get("type") == "tool" and p.get("tool_name") == "task" and sid:
+                inp = state.get("input") or {}
+                out.append({"subagent": sid, "agent": inp.get("subagent_type") or inp.get("agent"),
+                            "description": inp.get("description") or state.get("title"),
+                            "status": state.get("status")})
+    return out
+
+
+@tool("core")
+async def vibeflow_retry_subagent(run_id: str, subagent: str) -> Any:
+    """Re-run a failed or stuck subagent of a conversation."""
+    sid = await run_session(run_id)
+    return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/retry", subagent=subagent)
+
+
+@tool("core", read_only=True)
+async def vibeflow_get_workflow_batches(run_id: str) -> Any:
+    """Dynamic-workflow batches a conversation generated (the 'workflow'
+    skill builds and runs a graph of agents on the fly): batch id, name and
+    node graph."""
+    batches = await client.get(f"/api/v1/runs/{run_id}/workflow-batches")
+    return [{"batch_id": b.get("batch_id"), "name": b.get("name") or b.get("workflow_name"), "status": b.get("status"),
+             "nodes": [{"id": n.get("id"), "agent": (n.get("data") or n).get("agentType"),
+                        "label": (n.get("data") or n).get("label")} for n in (b.get("workflow_json") or {}).get("nodes", [])],
+             "edges": [(e.get("source"), e.get("target")) for e in (b.get("workflow_json") or {}).get("edges", [])]}
+            for b in batches or []]
 
 
 @tool("core", read_only=True)
@@ -341,7 +383,9 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
             if status in FAILED:
                 outcome = status
                 break
-            if status in TERMINAL:
+            # Canvas workflow runs: never finish while a node is still queued or running.
+            steps_open = any((s.get("status") or "") in STEP_OPEN for s in run.get("steps") or [])
+            if status in TERMINAL and not steps_open:
                 # A new run reports idle before the agent picks it up, a
                 # follow-up before its turn starts, and an answered question /
                 # permission before the agent resumes: require the turn's final
@@ -390,6 +434,9 @@ async def wait_reply(run_id: str, timeout: int, poll: int, min_messages: int | N
     tools_used = [f"{p.get('tool_name')}" for m in turn for p in m.get("parts") or [] if p.get("type") == "tool"]
     if tools_used:
         result["tools_used"] = tools_used
+    if len(run.get("steps") or []) > 1 or (run.get("steps") or [{}])[0].get("node_id") not in (None, "console"):
+        result["steps"] = [{"node": s.get("node_id"), "status": s.get("status"), "error": s.get("error_message")}
+                           for s in run.get("steps") or []]
     return result
 
 
@@ -518,10 +565,12 @@ async def vibeflow_answer_question(run_id: str, request_id: str, answers: list[l
 # ------------------------------------------------------- conversation control
 
 @tool("core", destructive=True)
-async def vibeflow_abort(run_id: str) -> Any:
-    """Stop the agent's current turn in a conversation."""
+async def vibeflow_abort(run_id: str, subagent: str | None = None) -> Any:
+    """Stop the agent's current turn in a conversation, or only one of its
+    subagents (subagent session id from vibeflow_list_subagents)."""
     sid = await run_session(run_id)
-    return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/abort", {"reason": "cancelled by user"})
+    return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/abort", {"reason": "cancelled by user"},
+                             subagent=subagent)
 
 
 @tool("core")

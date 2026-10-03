@@ -486,6 +486,15 @@ async def vibeflow_list_jira_projects(pat: str, email: str | None = None, site_i
     return await client.post("/api/v1/jira/projects", _clean(pat=pat, email=email, site_id=site_id))
 
 
+@tool("pm")
+async def vibeflow_list_jira_statuses(jira_project_key: str, pat: str, email: str | None = None,
+                                      site_id: str | None = None) -> Any:
+    """Workflow statuses of a Jira project (to map kanban columns in
+    vibeflow_configure_jira_sync)."""
+    return await client.post(f"/api/v1/jira/projects/{jira_project_key}/statuses",
+                             _clean(pat=pat, email=email, site_id=site_id))
+
+
 @tool("pm", read_only=True)
 async def vibeflow_get_jira_sync(project_id: str) -> Any:
     """The project's Jira sync configuration (not_found when not configured)."""

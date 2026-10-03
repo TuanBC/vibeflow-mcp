@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import re
+from html import unescape
 from typing import Any, Literal
 
+import httpx
+
+from .. import config
 from ..app import client, store, tool
 from ..auth import browser_login
+from ..errors import VibeFlowError
 
 # ---------------------------------------------------------------------- auth
 
@@ -102,6 +108,53 @@ async def vibeflow_get_kanban(project_id: str) -> Any:
 async def vibeflow_search(query: str) -> Any:
     """Global search across projects, tasks and conversations."""
     return await client.get("/api/v1/search", q=query)
+
+
+# ---------------------------------------------------------------------- docs
+
+_docs_index: list[dict[str, Any]] | None = None
+
+
+async def _public_get(path: str) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": config.USER_AGENT}) as http:
+        resp = await http.get(f"{config.WEB_URL}{path}")
+    if resp.status_code >= 400:
+        raise VibeFlowError(f"GET {path} -> HTTP {resp.status_code}", code="not_found" if resp.status_code == 404 else "http_error")
+    return resp
+
+
+@tool("core", read_only=True)
+async def vibeflow_search_docs(query: str, limit: int = 8) -> Any:
+    """Search the VibeFlow user docs (features, agents, skills, workflows,
+    tutorials, troubleshooting). Read a hit with vibeflow_read_docs(path)."""
+    global _docs_index
+    if _docs_index is None:
+        _docs_index = (await _public_get("/docs/docs-search.json")).json()
+    words = [w for w in query.lower().split() if w]
+    scored = []
+    for page in _docs_index:
+        title, text, path = (page.get("title") or "").lower(), (page.get("text") or "").lower(), page.get("path") or ""
+        score = sum(3 * (w in title) + (w in text) + (w in path.lower()) for w in words)
+        if score:
+            scored.append((score, page))
+    scored.sort(key=lambda x: -x[0])
+    return [{"title": p.get("title"), "path": p.get("path"), "sections": (p.get("text") or "")[:200]}
+            for _, p in scored[:limit]]
+
+
+@tool("core", read_only=True)
+async def vibeflow_read_docs(path: str, max_chars: int = 12000) -> Any:
+    """Read a VibeFlow docs page as plain text (path like '/docs/features/restore-points')."""
+    if not path.startswith("/docs"):
+        path = "/docs/" + path.lstrip("/")
+    html = (await _public_get(path)).text
+    main = re.search(r"<main[^>]*>(.*?)</main>", html, re.S | re.I)
+    body = main.group(1) if main else html
+    body = re.sub(r"<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>", " ", body, flags=re.S | re.I)
+    body = re.sub(r"</(p|h[1-6]|li|tr|div|pre)>", "\n", body, flags=re.I)
+    text = re.sub(r"<[^>]+>", "", body)
+    text = re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n\n", unescape(text))).strip()
+    return text[:max_chars] + ("\n… (truncated)" if len(text) > max_chars else "")
 
 
 # ---------------------------------------------------------------------- meta

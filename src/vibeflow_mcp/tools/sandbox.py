@@ -83,6 +83,28 @@ async def vibeflow_save_session(session_id: str) -> Any:
 
 
 @tool("core", destructive=True)
+async def vibeflow_stop_idle_sessions(min_idle_minutes: int = 30, confirm: bool = False) -> Any:
+    """Stop all of your sandboxes idle for at least min_idle_minutes (saves
+    compute; workspaces are saved and resumable). Requires confirm=true."""
+    require_confirm(confirm, "stop idle sandboxes")
+    return await client.post("/api/v1/sessions/mine/stop-idle", min_idle_seconds=min_idle_minutes * 60)
+
+
+@tool("core")
+async def vibeflow_reset_session_baseline(session_id: str) -> Any:
+    """Mark the current workspace as the new baseline for session-scoped
+    changes (vibeflow_get_changes(scope='session') starts empty again)."""
+    return await client.post(f"/api/v1/sessions/{session_id}/workspace-baseline")
+
+
+@tool("core")
+async def vibeflow_reload_agent_config(task_id: str, session_id: str | None = None) -> Any:
+    """Reload agents, skills and MCP config in the running sandbox after they
+    were edited (e.g. files under .opencode/ in the workspace)."""
+    return await client.post("/api/v1/changes/session/reload", task_id=task_id, session_id=session_id)
+
+
+@tool("core", destructive=True)
 async def vibeflow_stop_session(session_id: str, confirm: bool = False) -> Any:
     """Stop a sandbox. The platform saves the workspace first and it can be
     resumed, but running agents are interrupted. Requires confirm=true."""

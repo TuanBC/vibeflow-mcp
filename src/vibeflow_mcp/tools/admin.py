@@ -180,6 +180,23 @@ async def vibeflow_admin_set_budget(total_monthly_limit_usd: float | None = None
     return out
 
 
+@tool("admin", destructive=True)
+async def vibeflow_admin_update_role(role_id: str, permissions: list[str], version: int | None = None,
+                                     confirm: bool = False) -> Any:
+    """Replace a role's permission list (role ids / versions from
+    vibeflow_list_roles). version enables optimistic locking: a concurrent
+    edit by another admin returns 'busy'. Requires confirm=true."""
+    require_confirm(confirm, "change role permissions")
+    headers = {"If-Match": f'"{version}"'} if version is not None else None
+    try:
+        return await client.request("PATCH", f"/api/v1/roles/{role_id}", json={"permissions": permissions},
+                                    headers=headers)
+    except ApiError as exc:
+        if exc.code == "forbidden":
+            raise VibeFlowError("Editing roles needs a system admin role.", code="forbidden", status=403) from exc
+        raise
+
+
 @tool("admin", read_only=True)
 async def vibeflow_admin_dlp_test(sample: str) -> Any:
     """Run the DLP (data-loss prevention) rules against sample text."""

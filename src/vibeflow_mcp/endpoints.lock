@@ -94,6 +94,7 @@ PATCH /api/v1/kanban/tasks/{}/archive
 PATCH /api/v1/kanban/tasks/{}/unarchive
 PATCH /api/v1/projects/{}/llm-providers/{}
 PATCH /api/v1/projects/{}/pin
+PATCH /api/v1/roles/{}
 PATCH /api/v1/runs/{}/archive
 PATCH /api/v1/runs/{}/title
 PATCH /api/v1/users/me/onboarding
@@ -139,6 +140,7 @@ POST /api/v1/runs
 POST /api/v1/runs/step
 POST /api/v1/runs/{}/archive
 POST /api/v1/runs/{}/compact
+POST /api/v1/runs/{}/messages
 POST /api/v1/runs/{}/pending-prompts/{}/replay
 POST /api/v1/runs/{}/pin
 POST /api/v1/runs/{}/resume
@@ -147,8 +149,10 @@ POST /api/v1/sessions/start
 POST /api/v1/sessions/{}/file-sync-ticket
 POST /api/v1/sessions/{}/save
 POST /api/v1/sessions/{}/stop
+POST /api/v1/sessions/{}/upload-workspace
 POST /api/v1/sessions/{}/workspace-baseline
 POST /api/v1/tasks
+POST /api/v1/tasks/{}/attachments
 POST /api/v1/users/me/llm-providers/openai/callback
 POST /sessions/{}/vibeflow/cron
 POST /sessions/{}/vibeflow/file/upload
@@ -173,6 +177,7 @@ PUT /api/v1/projects/{}
 PUT /api/v1/projects/{}/budget
 PUT /api/v1/projects/{}/jira-sync
 PUT /api/v1/projects/{}/members/{}
+PUT /api/v1/projects/{}/sharepoint-source
 PUT /api/v1/projects/{}/templates/agents/{}
 PUT /api/v1/projects/{}/templates/workflows/{}
 PUT /api/v1/tasks/{}
