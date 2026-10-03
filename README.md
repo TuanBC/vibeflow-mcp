@@ -238,7 +238,7 @@ MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as `{"error
 | Chat | **`vibeflow_ask`**, `vibeflow_start_conversation`, `vibeflow_send_message`, `vibeflow_wait_for_reply` |
 | Human in the loop | `vibeflow_pending_prompts`, `vibeflow_reply_permission`, `vibeflow_answer_question` |
 | Subagents & workflow batches | `vibeflow_list_subagents`, `vibeflow_retry_subagent`, `vibeflow_get_workflow_batches` (plus `subagent=` on `vibeflow_get_messages` / `vibeflow_abort`) |
-| Conversation mgmt | `vibeflow_list_conversations`, `vibeflow_get_conversation`, `vibeflow_get_messages`, `vibeflow_get_transcript`, `vibeflow_conversation_usage`, `vibeflow_list_artifacts`, `vibeflow_abort`*, `vibeflow_resume_conversation`, `vibeflow_compact_conversation`, `vibeflow_fork_conversation`, `vibeflow_rename_conversation`, `vibeflow_pin_conversation`, `vibeflow_archive_conversation`, `vibeflow_delete_conversation`* |
+| Conversation mgmt | `vibeflow_list_conversations`, `vibeflow_get_conversation`, `vibeflow_get_messages`, `vibeflow_get_transcript`, `vibeflow_conversation_usage`, `vibeflow_list_artifacts`, `vibeflow_abort`, `vibeflow_resume_conversation`, `vibeflow_compact_conversation`, `vibeflow_fork_conversation`, `vibeflow_rename_conversation`, `vibeflow_pin_conversation`, `vibeflow_archive_conversation`, `vibeflow_delete_conversation`* |
 | Docs | `vibeflow_search_docs`, `vibeflow_read_docs` (public VibeFlow user docs) |
 | Escape hatch | `vibeflow_api` |
 
@@ -247,7 +247,7 @@ MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as `{"error
 | Group | Tools |
 |---|---|
 | Files | `vibeflow_list_files`, `vibeflow_read_file`, `vibeflow_search_files`, `vibeflow_write_file`, `vibeflow_upload_file`, `vibeflow_delete_file`*, `vibeflow_download_file`, `vibeflow_download_workspace`, `vibeflow_upload_workspace`* (**replaces the whole workspace**; auto-backup first) |
-| Git | `vibeflow_list_branches`, `vibeflow_checkout_branch`, `vibeflow_get_changes`, `vibeflow_get_diff`, `vibeflow_generate_commit_message`, `vibeflow_push_changes`*, `vibeflow_git_sync`, `vibeflow_git_status`, `vibeflow_ai_pull_merge` |
+| Git | `vibeflow_list_branches`, `vibeflow_checkout_branch`*, `vibeflow_get_changes`, `vibeflow_get_diff`, `vibeflow_generate_commit_message`, `vibeflow_push_changes`*, `vibeflow_git_sync`*, `vibeflow_git_status`, `vibeflow_ai_pull_merge` |
 | Restore points | `vibeflow_list_restore_points`, `vibeflow_restore_point_diff`, `vibeflow_revert_to`*, `vibeflow_undo_revert` |
 | Preview | `vibeflow_preview_run`, `vibeflow_preview_status`, `vibeflow_preview_link`, `vibeflow_preview_stop`, `vibeflow_preview_fix`, `vibeflow_fix_mermaid` |
 
@@ -268,7 +268,7 @@ MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as `{"error
 | Toolset | Tools |
 |---|---|
 | analytics | `vibeflow_project_cost`, `vibeflow_project_cost_daily`, `vibeflow_project_kpis`, `vibeflow_code_activity`, `vibeflow_export_analytics` |
-| advanced | `vibeflow_code_intel`, `vibeflow_code_graph`, `vibeflow_goal_status`, `vibeflow_goal_stop`*, `vibeflow_list_cron`, `vibeflow_agent_memory`, `vibeflow_sandbox_mcp_servers`, `vibeflow_list_background_jobs`, `vibeflow_background_tool_call`, `vibeflow_stop_job` |
+| advanced | `vibeflow_code_intel`, `vibeflow_code_graph`, `vibeflow_goal_status`, `vibeflow_goal_stop`, `vibeflow_list_cron`, `vibeflow_agent_memory`, `vibeflow_sandbox_mcp_servers`, `vibeflow_list_background_jobs`, `vibeflow_background_tool_call`, `vibeflow_stop_job` |
 | admin | `vibeflow_admin_list`, `vibeflow_admin_analytics`, `vibeflow_admin_user`*, `vibeflow_admin_import_users`*, `vibeflow_admin_archive_project`*, `vibeflow_admin_stop_session`*, `vibeflow_admin_flag_conversation`, `vibeflow_admin_provider`*, `vibeflow_admin_user_key`*, `vibeflow_admin_set_budget`*, `vibeflow_admin_update_role`*, `vibeflow_admin_dlp_test`, `vibeflow_admin_export` |
 
 \* destructive / publishing: requires `confirm=true`.
