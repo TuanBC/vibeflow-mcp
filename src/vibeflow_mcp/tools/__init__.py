@@ -9,4 +9,4 @@ Toolsets:
   admin     - system administration (needs a system admin role)
 """
 
-from . import chat, code, core, insights, pm, sandbox  # noqa: F401
+from . import admin, chat, code, core, insights, pm, sandbox  # noqa: F401
