@@ -1,11 +1,173 @@
 # vibeflow-mcp
 
-MCP server for **VibeFlow** (https://vibeflow.fptconsulting.co.jp) — drive projects, sandboxes and
-AI-agent conversations from Claude Code (or any MCP client) without the web UI.
+MCP server for **VibeFlow** (https://vibeflow.fptconsulting.co.jp) — drive projects, sandboxes, AI-agent
+conversations, workflows, code review, previews and analytics from your AI assistant, without the web UI.
 
-Status: **all 7 planned phases implemented** — 174 tools in 6 toolsets plus MCP resources and prompts, 143 unit
-tests, verified against production (see [BACKLOG.md](BACKLOG.md) for what could not be verified live).
+**Quick install** (after [step 1](#1-install-the-server-once)):
+
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_vibeflow-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=vibeflow&config=%7B%22command%22%3A%22vibeflow-mcp%22%2C%22args%22%3A%5B%5D%2C%22env%22%3A%7B%22VIBEFLOW_TOOLSETS%22%3A%22core%2Ccode%2Canalytics%2Cadvanced%22%7D%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_vibeflow-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=vibeflow&config=%7B%22command%22%3A%22vibeflow-mcp%22%2C%22args%22%3A%5B%5D%2C%22env%22%3A%7B%22VIBEFLOW_TOOLSETS%22%3A%22core%2Ccode%2Canalytics%2Cadvanced%22%7D%7D&quality=insiders)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-one_command-D97757?style=flat-square&logo=anthropic&logoColor=white)](#claude-code)
+[![Hermes Agent](https://img.shields.io/badge/Hermes_Agent-config_snippet-6E56CF?style=flat-square)](#hermes-agent)
+
+The VS Code buttons install the server for **GitHub Copilot**. Claude Code and Hermes have no install links, so
+their badges jump to a one-step setup below.
+
+Status: all 7 planned phases implemented — 175 tools in 6 toolsets plus MCP resources and prompts, 163 unit
+tests, verified against production (see [BACKLOG.md](BACKLOG.md) for what is not yet verified live).
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) has the feature map and learnings.
+
+## Contents
+
+- [What VibeFlow can do (and how this MCP covers it)](#what-vibeflow-can-do-and-how-this-mcp-covers-it)
+- [Installation](#installation) — [Claude Code](#claude-code) · [GitHub Copilot](#github-copilot-vs-code) ·
+  [Hermes Agent](#hermes-agent) · [Microsoft 365 Copilot / ChatGPT Enterprise](#microsoft-365-copilot-and-chatgpt-enterprise)
+- [How auth works](#how-auth-works) · [CLI](#cli) · [Configuration](#configuration-env) · [Tools](#tools)
+
+## What VibeFlow can do (and how this MCP covers it)
+
+VibeFlow is an AI software-development platform: every project gets a cloud **sandbox** (a container with the
+code) where an **agent harness** reads and writes files, runs commands, delegates to specialist agents, runs
+multi-step workflows and serves previews — with git, kanban, budgets and analytics around it.
+
+| Area | VibeFlow capability | MCP tools |
+|---|---|---|
+| **Chat (Console)** | Talk to the agent in a project; Plan (read-only) vs Build mode; model + thinking-effort picker; attachments; auto-approve | `vibeflow_ask` (one call), `vibeflow_start_conversation`, `vibeflow_send_message`, `vibeflow_wait_for_reply` (live progress) |
+| **Agents (`!`)** | 15 built-in specialists (business-analyst, solution-architect, backend-dev, frontend-dev, tester, reviewer, security-auditor, dba-expert, cloud-expert, migration-expert, project-manager, slide-craft, document-to-md, docs-drift, revert-expert) + custom agents | `vibeflow_list_agents`, `agent=` on chat tools, `vibeflow_create/update/delete_agent_template` |
+| **Skills (`/`)** | Packaged capabilities: goal, deep-goal, deep-research, speckit-*, slide-craft, workflow, test-driven-development, … | `vibeflow_list_skills`, `skill=` on chat tools |
+| **Workflows (`#`)** | 8 built-in pipelines: RFP→Demo, RFP→Proposal, Bug Fix, Code Review, DB Migration, Feature Dev, Full-Stack, Safe Refactor; dynamic workflows | `vibeflow_list_workflows`, `workflow=`, MCP prompts `vibeflow_bug_fix` …, `vibeflow_get_workflow_batches` |
+| **Canvas** | Visual multi-agent workflow editor; run all, a single node, or from a node; parallel branches | `vibeflow_get/save_workflow`, `vibeflow_run_workflow`, `vibeflow_run_workflow_step`, workflow templates (create / export / import) |
+| **Human in the loop** | Permission prompts (Accept / Deny / Allow always), agent questions | `vibeflow_pending_prompts`, `vibeflow_reply_permission`, `vibeflow_answer_question` |
+| **Subagents & background jobs** | Delegated child agents; long commands in the background; scheduled (cron) jobs; goal loops | `vibeflow_list_subagents`, `vibeflow_retry_subagent`, `vibeflow_list_background_jobs`, `vibeflow_background_tool_call`, `vibeflow_stop_job`, `vibeflow_list_cron`, `vibeflow_goal_status/stop` |
+| **Conversation management** | Rename, pin, archive, fork, compact, resume, delete; transcripts; cost & context usage | `vibeflow_rename/pin/archive/fork/compact/resume/delete_conversation`, `vibeflow_get_messages`, `vibeflow_conversation_usage` |
+| **Sandbox** | Start / stop / resume, auto-save, idle stop, upload a ZIP/folder workspace | `vibeflow_start_session`, `vibeflow_stop_session`, `vibeflow_save_session`, `vibeflow_stop_idle_sessions`, `vibeflow_upload_workspace` |
+| **IDE / files** | File tree, read / write / upload / delete / download, workspace zip, code intelligence (hover, definition, references, diagnostics, outline) | `vibeflow_list/read/write/search/upload/delete/download_file`, `vibeflow_download_workspace`, `vibeflow_code_intel` |
+| **Changes (git)** | Diff, AI commit message, commit + push / PR, branches, pull, ahead/behind, AI pull-and-merge | `vibeflow_get_changes`, `vibeflow_get_diff`, `vibeflow_generate_commit_message`, `vibeflow_push_changes`, `vibeflow_git_status`, `vibeflow_git_sync`, `vibeflow_ai_pull_merge` |
+| **Restore points** | Per-turn checkpoints; preview diff; revert and undo | `vibeflow_list_restore_points`, `vibeflow_restore_point_diff`, `vibeflow_revert_to`, `vibeflow_undo_revert` |
+| **Preview** | Run the app on a public preview URL, logs, AI fix, Mermaid fix | `vibeflow_preview_run/status/link/stop/fix`, `vibeflow_fix_mermaid` |
+| **Galaxy** | Code knowledge graph of files and symbols | `vibeflow_code_graph` |
+| **Context & memory** | Context-window gauge, agent memory and work logs, sandbox MCP servers | `vibeflow_conversation_usage`, `vibeflow_agent_memory`, `vibeflow_sandbox_mcp_servers` |
+| **Projects** | Local or git projects, settings, members & roles (pm / tl / member), monthly budget, AI prompt helper | `vibeflow_create/update/delete/pin_project`, `vibeflow_*_member*`, `vibeflow_get/set_budget`, `vibeflow_generate_prompt` |
+| **Tasks / kanban** | Board, cards (priority, story points, estimates, assignee), move, archive, attachments | `vibeflow_get_kanban`, `vibeflow_create/update/move/assign/archive/delete_kanban_task`, `vibeflow_*_attachment` |
+| **Templates** | Prompt templates with variables, custom agents, workflow templates | `vibeflow_*_prompt_template`, `vibeflow_*_agent_template`, `vibeflow_*_workflow_template` |
+| **Integrations** | Project LLM providers (own API keys), git credentials, Jira sync, SharePoint source | `vibeflow_*_llm_provider`, `vibeflow_*_git_credential`, `vibeflow_*jira*`, `vibeflow_get/set_sharepoint*` |
+| **Analytics** | Cost by user / task / model, daily cost, outcome & git KPIs, code activity, CSV/PDF report | `vibeflow_project_cost`, `vibeflow_project_cost_daily`, `vibeflow_project_kpis`, `vibeflow_code_activity`, `vibeflow_export_analytics` |
+| **Administration** | Users & approvals, roles, platform LLM providers & budgets, DLP, audit, system health, org analytics | `vibeflow_admin_*` (opt-in toolset, needs a system-admin account) |
+| **Account & docs** | Platform quota, settings, onboarding, user docs | `vibeflow_get_quota`, `vibeflow_get/update_settings`, `vibeflow_search_docs`, `vibeflow_read_docs` |
+
+Not available through the MCP: two-way local folder sync (browser-only), the SharePoint file picker (the browser
+talks to Microsoft Graph directly), and connecting a personal OpenAI account (browser OAuth). See
+[BACKLOG.md](BACKLOG.md).
+
+## Installation
+
+### Requirements
+
+- Windows, macOS or Linux with **Python ≥ 3.10** and [**uv**](https://docs.astral.sh/uv/getting-started/installation/)
+- A VibeFlow account (Microsoft / FPT SSO)
+- Network access to `vibeflow.fptconsulting.co.jp` and `api.vibeflow.fptconsulting.co.jp`
+
+### 1. Install the server (once)
+
+From this repository's folder:
+
+```bash
+uv tool install .
+```
+
+```bash
+uv tool update-shell
+```
+
+This puts a `vibeflow-mcp` command on your PATH (open a new terminal after `update-shell`). Then download the
+browser used for sign-in and log in once — a window opens for Microsoft SSO:
+
+```bash
+vibeflow-mcp install-browser
+```
+
+```bash
+vibeflow-mcp login
+```
+
+The token is stored in your OS credential manager and refreshed automatically; `vibeflow-mcp status` shows it.
+To update later, run `uv tool install --reinstall .` from the repository folder.
+
+### 2. Connect your AI assistant
+
+All clients run the same local command, `vibeflow-mcp`, over stdio. `VIBEFLOW_TOOLSETS` picks the tool groups
+(see [Configuration](#configuration-env) and the [toolset sizes](#tools)).
+
+#### Claude Code
+
+```bash
+claude mcp add vibeflow --scope user -e VIBEFLOW_TOOLSETS=core,code,pm,analytics,advanced -- vibeflow-mcp
+```
+
+`--scope user` makes it available in every project; use `--scope project` to write a shared `.mcp.json` instead.
+Check with `claude mcp list`, then ask Claude e.g. *"Use vibeflow to list my projects"*.
+
+#### GitHub Copilot (VS Code)
+
+Click **Install in VS Code** (or **VS Code Insiders**) at the top of this page, then open Copilot Chat in **Agent**
+mode and enable the `vibeflow` tools. Manual alternative — add to `.vscode/mcp.json` (workspace) or your user
+`mcp.json` (*MCP: Open User Configuration*):
+
+```json
+{
+  "servers": {
+    "vibeflow": {
+      "type": "stdio",
+      "command": "vibeflow-mcp",
+      "env": { "VIBEFLOW_TOOLSETS": "core,code,analytics,advanced" }
+    }
+  }
+}
+```
+
+Copilot allows at most 128 tools per agent request, so this config leaves out `pm` (96 tools instead of 162). For
+project-management work, swap a group in, e.g. `"core,pm"`. Copilot in Visual Studio and JetBrains IDEs uses the
+same `command` / `env` fields in its own MCP settings. Your organisation may need to allow MCP servers in its
+Copilot policies.
+
+#### Hermes Agent
+
+Add to Hermes' `config.yaml` (`~/.hermes/config.yaml`; on Windows `%LOCALAPPDATA%\hermes\config.yaml`) and restart
+Hermes. The longer `timeout` lets agent runs (`vibeflow_ask`, workflows) finish:
+
+```yaml
+mcp_servers:
+  vibeflow:
+    command: "vibeflow-mcp"
+    args: []
+    env:
+      VIBEFLOW_TOOLSETS: "core,code,pm,analytics,advanced"
+    timeout: 900
+    connect_timeout: 60
+```
+
+Hermes needs its optional `mcp` Python package (`pip install mcp`). Tools appear as `mcp_vibeflow_*`.
+
+#### Microsoft 365 Copilot and ChatGPT Enterprise
+
+**Not supported today.** Both connect only to **remote MCP servers over HTTPS** (M365 Copilot through Copilot
+Studio / declarative agents, ChatGPT through custom connectors), while this server runs **locally** and acts with
+**your personal VibeFlow sign-in**. Exposing it on the internet would let anyone who reaches the URL act as you.
+Supporting them needs a hosted, multi-user version with its own OAuth in front of VibeFlow — ideally an official
+VibeFlow API or MCP endpoint. Until then, use one of the local clients above.
+
+### Development install
+
+```bash
+uv venv .venv && uv pip install -e ".[test]"
+```
+
+```bash
+.venv/Scripts/python -m pytest
+```
+
+`.mcp.json` in this folder is a machine-specific Claude Code config pointing at this checkout's `.venv` (edit the
+interpreter path, or switch it to `"command": "vibeflow-mcp"` after step 1).
 
 ## How auth works
 
@@ -14,30 +176,13 @@ ID token at `POST /api/v1/auth/azure/token` for a **VibeFlow JWT (8 h)** + **ref
 `localStorage["vibeflow-auth"]`.
 
 The Azure app only allows the SPA redirect URI, so the MCP does not run its own OAuth flow. Instead
-`vibeflow_login` opens a real Chromium window (Playwright, persistent profile), you complete SSO as normal,
-and the tokens are lifted from localStorage into `~/.vibeflow-mcp/tokens.json`. After that:
+`vibeflow-mcp login` / `vibeflow_login` opens a real Chromium window (Playwright, persistent profile), you complete
+SSO as normal, and the tokens are lifted from localStorage into the OS keyring (or `~/.vibeflow-mcp/tokens.json`).
+After that:
 
 - requests send `Authorization: Bearer <jwt>` + a browser User-Agent (the Azure App Gateway WAF 403s non-browser UAs);
-- tokens are refreshed automatically via `POST /api/v1/auth/azure/refresh` (rotating) when < 5 min remain or on a 401;
-- the browser profile keeps the Microsoft session cookie, so re-login is usually one click.
-
-## Setup
-
-Requires Python ≥ 3.10.
-
-```bash
-uv venv .venv && uv pip install -e ".[test]"
-```
-
-```bash
-.venv/Scripts/vibeflow-mcp install-browser
-```
-
-```bash
-.venv/Scripts/vibeflow-mcp login
-```
-
-`.mcp.json` in this folder registers the server for Claude Code (edit the interpreter path for your machine).
+- tokens are refreshed automatically via `POST /api/v1/auth/azure/refresh` (rotating) when < 5 min remain or when
+  VibeFlow rejects the session; if refresh fails, a silent headless login re-uses the saved Microsoft session.
 
 ### CLI
 
@@ -59,12 +204,6 @@ uv venv .venv && uv pip install -e ".[test]"
 | `VIBEFLOW_DEFAULT_MODEL` | – | model used by `vibeflow_ask` when none is given |
 | `VIBEFLOW_USER_AGENT` | Chrome UA | sent on every request (the WAF blocks non-browser UAs) |
 
-### Tests
-
-```bash
-.venv/Scripts/python -m pytest
-```
-
 ## Tools
 
 Toolsets are chosen with `VIBEFLOW_TOOLSETS` (default `core,code`; the bundled `.mcp.json` enables
@@ -78,7 +217,7 @@ MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as `{"error
 | `code` | 28 | workspace files, git changes / push, restore points, preview (+ sign-in link) |
 | `pm` | 66 | projects, members & roles, budget, kanban, tasks & attachments, prompt / agent / workflow templates, Canvas workflows, git credentials, LLM providers, Jira, SharePoint, settings |
 | `analytics` | 5 | project cost breakdowns, daily cost, KPIs, code activity, csv/pdf report export |
-| `advanced` | 9 | code intelligence (LSP), Galaxy code graph, agent goal / cron / memory, sandbox MCP servers, background jobs |
+| `advanced` | 10 | code intelligence (LSP), Galaxy code graph, agent goal / cron / memory, sandbox MCP servers, background jobs |
 | `admin` | 13 | users, platform providers & budgets, audit, DLP, sessions, system health, org analytics (system admin role) |
 
 **MCP resources:** `vibeflow://runs/{run_id}/transcript`, `vibeflow://runs/{run_id}/messages`,
@@ -129,7 +268,7 @@ MCP `readOnlyHint` / `destructiveHint` annotations. Errors come back as `{"error
 | Toolset | Tools |
 |---|---|
 | analytics | `vibeflow_project_cost`, `vibeflow_project_cost_daily`, `vibeflow_project_kpis`, `vibeflow_code_activity`, `vibeflow_export_analytics` |
-| advanced | `vibeflow_code_intel`, `vibeflow_code_graph`, `vibeflow_goal_status`, `vibeflow_goal_stop`*, `vibeflow_list_cron`, `vibeflow_agent_memory`, `vibeflow_sandbox_mcp_servers`, `vibeflow_background_tool_call`, `vibeflow_stop_job`* |
+| advanced | `vibeflow_code_intel`, `vibeflow_code_graph`, `vibeflow_goal_status`, `vibeflow_goal_stop`*, `vibeflow_list_cron`, `vibeflow_agent_memory`, `vibeflow_sandbox_mcp_servers`, `vibeflow_list_background_jobs`, `vibeflow_background_tool_call`, `vibeflow_stop_job` |
 | admin | `vibeflow_admin_list`, `vibeflow_admin_analytics`, `vibeflow_admin_user`*, `vibeflow_admin_import_users`*, `vibeflow_admin_archive_project`*, `vibeflow_admin_stop_session`*, `vibeflow_admin_flag_conversation`, `vibeflow_admin_provider`*, `vibeflow_admin_user_key`*, `vibeflow_admin_set_budget`*, `vibeflow_admin_update_role`*, `vibeflow_admin_dlp_test`, `vibeflow_admin_export` |
 
 \* destructive / publishing: requires `confirm=true`.
