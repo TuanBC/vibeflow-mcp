@@ -21,9 +21,10 @@ tests, verified against production (see [BACKLOG.md](BACKLOG.md) for what is not
 
 - [What VibeFlow can do (and how this MCP covers it)](#what-vibeflow-can-do-and-how-this-mcp-covers-it)
 - [Installation](#installation) — [Claude Code](#claude-code) · [GitHub Copilot](#github-copilot-vs-code) ·
-  [Hermes Agent](#hermes-agent) · [Microsoft 365 Copilot / ChatGPT Enterprise](#microsoft-365-copilot-and-chatgpt-enterprise)
+  [Hermes Agent](#hermes-agent) · [Microsoft 365 Copilot / ChatGPT Enterprise](#microsoft-365-copilot-and-chatgpt-enterprise) ·
+  [Agent skills](#3-install-the-agent-skills-recommended)
 - [How auth works](#how-auth-works) · [CLI](#cli) · [Configuration](#configuration-env) · [Tools](#tools)
-- [Agent skills](#agent-skills) — ready-made `SKILL.md` playbooks for common workflows
+- [Agent skills](#agent-skills) — ready-made `SKILL.md` playbooks for common workflows ([install](#3-install-the-agent-skills-recommended))
 
 ## What VibeFlow can do (and how this MCP covers it)
 
@@ -157,6 +158,67 @@ Studio / declarative agents, ChatGPT through custom connectors), while this serv
 Supporting them needs a hosted, multi-user version with its own OAuth in front of VibeFlow — ideally an official
 VibeFlow API or MCP endpoint. Until then, use one of the local clients above.
 
+### 3. Install the agent skills (recommended)
+
+The [`skills/`](skills/README.md) folder holds 12 `SKILL.md` playbooks that teach the agent *how* to use the tools
+(tool order, outcomes, guardrails). The agent loads a skill only when its description matches the task, so
+installing all of them costs almost nothing. Run the commands from this repository's folder; re-run them after
+pulling updates. Skills need the MCP server from step 2 to be connected.
+
+#### Claude Code
+
+Personal (every project):
+
+```bash
+mkdir -p ~/.claude/skills && cp -r skills/vibeflow-* ~/.claude/skills/
+```
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null; Copy-Item -Recurse -Force skills\vibeflow-* "$HOME\.claude\skills\"
+```
+
+Or per project (shared with the team through git): copy into `<project>/.claude/skills/` instead. Restart Claude
+Code, then ask *"What skills do you have for VibeFlow?"* to check they are picked up.
+
+#### GitHub Copilot (VS Code)
+
+Personal skills go in `~/.copilot/skills/`; project skills in `<repo>/.github/skills/` (VS Code also reads
+`.claude/skills/` and `.agents/skills/`, so a Claude Code install works for Copilot too):
+
+```bash
+mkdir -p ~/.copilot/skills && cp -r skills/vibeflow-* ~/.copilot/skills/
+```
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.copilot\skills" | Out-Null; Copy-Item -Recurse -Force skills\vibeflow-* "$HOME\.copilot\skills\"
+```
+
+Skills work in Copilot Chat **Agent** mode. If they are not picked up, update VS Code and check that agent skills
+are enabled in your settings and allowed by your organisation's Copilot policies. Because the Copilot config above
+leaves out `pm`, the `vibeflow-project-setup` and `vibeflow-kanban-planning` skills only work after you swap `pm` in.
+
+#### Hermes Agent
+
+Hermes reads skills from `~/.hermes/skills/` (the `skills` folder next to its `config.yaml`):
+
+```bash
+mkdir -p ~/.hermes/skills && cp -r skills/vibeflow-* ~/.hermes/skills/
+```
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.hermes\skills" | Out-Null; Copy-Item -Recurse -Force skills\vibeflow-* "$HOME\.hermes\skills\"
+```
+
+Start a new Hermes session to load them. Hermes prefixes MCP tools as `mcp_vibeflow_*`; the skills name tools
+`vibeflow_*`, which the agent maps to the prefixed names.
+
+#### Other agents
+
+Any framework that supports the [Agent Skills](https://agentskills.io) format (`<name>/SKILL.md` with
+`name` / `description` frontmatter) can use the folders as they are — copy them into its skills directory. For
+agents without skill support, paste `skills/vibeflow-basics/SKILL.md` into the system or custom instructions.
+Microsoft 365 Copilot and ChatGPT Enterprise cannot use the skills, because they cannot connect to this server.
+
 ### Development install
 
 ```bash
@@ -175,13 +237,8 @@ interpreter path, or switch it to `"command": "vibeflow-mcp"` after step 1).
 [`skills/`](skills/README.md) holds 12 [Agent Skills](https://agentskills.io) (`<name>/SKILL.md`) that teach an
 agent the tool sequences, outcomes and guardrails for frequent VibeFlow work: basics, agent chat,
 specialists and workflows, review and ship, bug fix, workspace files, preview, Canvas workflows, project
-setup, kanban planning, cost and analytics, troubleshooting. Install them with:
-
-```bash
-cp -r skills/vibeflow-* ~/.claude/skills/
-```
-
-(GitHub Copilot: `<repo>/.github/skills/`; Hermes: `~/.hermes/skills/` — see [skills/README.md](skills/README.md).)
+setup, kanban planning, cost and analytics, troubleshooting. Install them per agent as described in
+[step 3 of the installation](#3-install-the-agent-skills-recommended).
 
 ## How auth works
 

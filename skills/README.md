@@ -22,21 +22,37 @@ The `description` says *when* to use the skill, so an agent loads the body only 
 
 ## Install
 
-Copy (or symlink) the `vibeflow-*` folders to where your agent framework looks for skills:
+Run from the repository root (the folder above this one). Re-run after pulling updates.
 
-| Framework | Location |
-|---|---|
-| Claude Code | `~/.claude/skills/` (all projects) or `<project>/.claude/skills/` |
-| GitHub Copilot (VS Code agent mode) | `<repo>/.github/skills/` (Copilot also reads `.claude/skills/`) |
-| Hermes Agent | `~/.hermes/skills/` |
-| Other frameworks | any skills folder that reads `SKILL.md` with `name` / `description` frontmatter |
+| Agent | Personal (all projects) | Per project (commit to git) |
+|---|---|---|
+| Claude Code | `~/.claude/skills/` | `<project>/.claude/skills/` |
+| GitHub Copilot (VS Code, Agent mode) | `~/.copilot/skills/` | `<repo>/.github/skills/` |
+| Hermes Agent | `~/.hermes/skills/` | – |
+| Other Agent Skills frameworks | the framework's skills folder | the framework's skills folder |
+
+VS Code also reads `~/.claude/skills/`, `.claude/skills/` and `.agents/skills/`, so one Claude Code install covers
+Copilot too.
+
+macOS / Linux / Git Bash (example: Claude Code; swap the folder for another agent):
 
 ```bash
-cp -r skills/vibeflow-* ~/.claude/skills/
+mkdir -p ~/.claude/skills && cp -r skills/vibeflow-* ~/.claude/skills/
 ```
 
-The skills assume the vibeflow MCP server is connected (see the main [README](../README.md)). A tool named
-in a skill exists only if its toolset is enabled in `VIBEFLOW_TOOLSETS`.
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null; Copy-Item -Recurse -Force skills\vibeflow-* "$HOME\.claude\skills\"
+```
+
+Then start a new agent session. Notes:
+
+- The skills assume the vibeflow MCP server is connected (see the main [README](../README.md#2-connect-your-ai-assistant)).
+  A tool named in a skill exists only if its toolset is enabled in `VIBEFLOW_TOOLSETS`; for example the
+  default Copilot config leaves out `pm`, which `vibeflow-project-setup` and `vibeflow-kanban-planning` need.
+- Hermes prefixes MCP tools as `mcp_vibeflow_*`; the agent maps the skills' `vibeflow_*` names onto them.
+- Agents without skill support: paste `vibeflow-basics/SKILL.md` into their custom instructions.
 
 ## Conventions
 
