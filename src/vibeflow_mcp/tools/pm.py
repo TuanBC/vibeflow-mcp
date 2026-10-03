@@ -69,8 +69,22 @@ async def vibeflow_pin_project(project_id: str, pinned: bool = True) -> Any:
 
 
 @tool("pm")
-async def vibeflow_generate_prompt(project_id: str, context: str) -> Any:
-    """AI helper: turn rough context into a well-structured agent prompt for this project."""
+async def vibeflow_generate_prompt(project_id: str, kind: Literal["task_description", "agent_prompt", "workflow_instruction"],
+                                   idea: str, name: str = "", task_title: str = "", task_description: str = "",
+                                   agent_type: str = "") -> Any:
+    """AI writing helper (the SPA's 'Generate Prompt'): expands a rough idea into
+    - task_description: a kanban task description (name = task name)
+    - agent_prompt: a custom agent's system prompt (name = agent name)
+    - workflow_instruction: a Canvas node's instructions (name = node label,
+      agent_type, task_title, task_description give context)."""
+    if kind == "task_description":
+        context = {"type": kind, "task_name": name, "project_name": (await client.get(f"/api/v1/projects/{project_id}")).get("name"),
+                   "existing_description": idea}
+    elif kind == "agent_prompt":
+        context = {"type": kind, "agent_name": name, "agent_description": idea}
+    else:
+        context = {"type": kind, "agent_type": agent_type, "node_label": name or agent_type, "task_title": task_title,
+                   "task_description": task_description, "existing_text": idea}
     return await client.post(f"/api/v1/projects/{project_id}/generate-prompt", {"context": context})
 
 
