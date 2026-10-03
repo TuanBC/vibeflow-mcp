@@ -162,10 +162,10 @@ system health/metrics · capacity report · org-wide analytics & infra cost.
 | **1 — Hardening** ✅ | uv packaging + `playwright install` bootstrap; OS keyring for tokens; silent headless re-login with the saved profile; unified error model (401/403/pending_approval/account_disabled/cooling_down); tool annotations; httpx mocks (respx) + recorded fixtures; contract-drift check (hash the SPA bundle, diff the extracted endpoint list) | +3 | 2–3 d |
 | **2 — Conversation completeness** ✅ | agents/skills/workflow pickers; `vibeflow_ask` composite; fork/resume/compact/abort/retry; permission & question replies + pending prompts; attachments upload; cost/context usage; pin/archive/delete; SSE streaming with progress notifications | +18 | 4–5 d |
 | **3 — Code loop** ✅ | files (tree/read/search/upload/delete/download), branches/checkout, changes status/diff, AI commit message, push/PR, git-sync, restore points (list/diff/revert/undo), preview run/stop/logs/fix, start-session-with-git | +20 | 4–5 d |
-| **4 — Project management** | projects CRUD/pin, members/roles, kanban CRUD/move/assign/archive, task CRUD + attachments, templates (agents/prompts/workflows + import/export), Canvas workflow get/put/run/step, git credentials, project & personal LLM providers, budget, Jira, SharePoint, settings/onboarding/terms | +35 | 5–6 d |
-| **5 — Analytics** | project cost/KPI/outcome/code-activity tools + export; user stats | +8 | 1–2 d |
-| **6 — Admin** (opt-in toolset, role-checked at startup via `/auth/me`) | users/approvals/whitelist/roles, providers & keys, DLP, audit, sessions, health/metrics/capacity, org analytics | +30 | 3–4 d |
-| **7 — Advanced** | MCP resources & workflow prompts, goal/cron/memory harness ops, local file sync over WebSocket, Galaxy graph, LSP queries | +10 | 3–5 d |
+| **4 — Project management** ✅ | projects CRUD/pin, members/roles, kanban CRUD/move/assign/archive, task CRUD + attachments, templates (agents/prompts/workflows + import/export), Canvas workflow get/put/run/step, git credentials, project & personal LLM providers, budget, Jira, SharePoint, settings/onboarding/terms | +35 | 5–6 d |
+| **5 — Analytics** ✅ | project cost/KPI/outcome/code-activity tools + export; user stats | +8 | 1–2 d |
+| **6 — Admin** ✅ (opt-in toolset, role-checked at startup via `/auth/me`) | users/approvals/whitelist/roles, providers & keys, DLP, audit, sessions, health/metrics/capacity, org analytics | +30 | 3–4 d |
+| **7 — Advanced** ✅ | MCP resources & workflow prompts, goal/cron/memory harness ops, local file sync over WebSocket, Galaxy graph, LSP queries | +10 | 3–5 d |
 
 Total ≈ 150 tools / ~4–5 weeks for one engineer; Phases 1–3 (~2 weeks) already cover the day-to-day
 "use VibeFlow without the GUI" workflow.
@@ -219,3 +219,22 @@ Total ≈ 150 tools / ~4–5 weeks for one engineer; Phases 1–3 (~2 weeks) alr
 - `/changes/generate-message` runs an LLM server-side (> 60 s observed) and sometimes returns
   "AI returned empty response" — a platform-side issue, surfaced as a `bad_request` error.
 - Restore points exist only for conversations run in the current pod (`run_not_found` after a restart).
+
+
+## 9. Phases 4–7 (2026-10-03)
+
+- **Status: all planned phases implemented** — 160 tools in 6 toolsets (`core` 45, `code` 24, `pm` 65,
+  `analytics` 5, `advanced` 9, `admin` 12) + 4 MCP resource templates + 8 workflow prompts; 130 unit tests.
+- Live-verified: every Phase 4 read tool, reversible writes (pin/unpin project, kanban card create → update →
+  move → assign → archive, Canvas workflow save round-trip), all analytics tools incl. csv/pdf export, the admin
+  403 path, LSP (document-symbol, diagnostics), code graph, memory, cron, sandbox MCP servers, goal status,
+  resources and prompts. Not run live: see BACKLOG B6–B9.
+- Request schemas were discovered with FastAPI's own 422 validation: `{}` bodies on fake-id paths list the
+  required fields without side effects (an invalid enum value lists the allowed values). Top-level create
+  endpoints can accept an arbitrary body — `POST /git-credentials` created a junk credential once (deleted).
+- Facts that differ from first guesses: member roles are `pm | tl | member`; kanban priority
+  `low | medium | high | urgent`; budget body key is `monthly_limit`; analytics export formats are only
+  `csv | pdf`; daily cost needs `from`/`to`; goals are keyed by the conversation's OpenCode `sessionID`
+  (`code_session_id`), not the run id; code-graph nodes use `label` for the kind and `name`/`file_path` for
+  identity; LSP body is `{workdir, file, line, character}`.
+- Local WebSocket file sync was deferred (BACKLOG B9).
