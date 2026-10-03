@@ -81,10 +81,13 @@ class VibeFlowClient:
         except httpx.HTTPError as exc:
             raise VibeFlowError(f"Network error calling {path}: {type(exc).__name__} {exc}", code="network_error",
                                 hint="Check connectivity to api.vibeflow.fptconsulting.co.jp.") from exc
-        if resp.status_code == 401 and not _retried and await self._recover(token):
-            return await self.raw(method, path, params=params, json=json, files=files, data=data,
-                                  headers=headers, timeout=timeout, _retried=True)
-        if resp.status_code == 401:
+        # Only a 401 with WWW-Authenticate is about OUR session token; other 401s
+        # are proxied from upstream services (e.g. a rejected Jira PAT) and must
+        # not trigger a refresh / re-login.
+        if resp.status_code == 401 and "www-authenticate" in resp.headers:
+            if not _retried and await self._recover(token):
+                return await self.raw(method, path, params=params, json=json, files=files, data=data,
+                                      headers=headers, timeout=timeout, _retried=True)
             raise AuthRequired("VibeFlow rejected the token.", status=401)
         return resp
 

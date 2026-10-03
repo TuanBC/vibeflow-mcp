@@ -65,8 +65,8 @@ def classify(status: int, detail: Any) -> tuple[str, str | None]:
         return "no_session", "Start the sandbox first: vibeflow_start_session(project_id), then retry."
     if ("quota" in text or "budget" in text) and status in (402, 403, 429):
         return "quota_exceeded", "Check vibeflow_get_quota / the project budget."
-    if status == 401:
-        return "unauthorized", "Session expired. Call vibeflow_login."
+    if status == 401:  # VibeFlow session 401s become AuthRequired in the client
+        return "credential_rejected", "A credential passed to this call (e.g. Jira PAT, API key) was rejected upstream."
     if status == 403:
         return "forbidden", "Your role does not allow this action."
     if status == 404:

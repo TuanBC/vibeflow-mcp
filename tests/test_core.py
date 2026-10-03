@@ -125,7 +125,8 @@ async def test_client_sends_browser_ua_and_bearer(logged_in):
 
 @respx.mock
 async def test_client_refreshes_on_401_and_retries(logged_in):
-    respx.get(f"{API}/api/v1/projects").mock(side_effect=[httpx.Response(401), httpx.Response(200, json={"projects": []})])
+    respx.get(f"{API}/api/v1/projects").mock(side_effect=[httpx.Response(401, headers={"WWW-Authenticate": "Bearer"}),
+                                                          httpx.Response(200, json={"projects": []})])
     respx.post(f"{API}/api/v1/auth/azure/refresh").mock(
         return_value=httpx.Response(200, json={"access_token": make_jwt(jti="new"), "refresh_token": "r2"}))
     assert await app.client.get("/api/v1/projects") == {"projects": []}
@@ -246,3 +247,14 @@ def test_render_tree_depth_and_diff():
         {"name": "pkg", "type": "directory", "children": [{"name": "x.py", "type": "file"}]}]}]
     assert render.tree(entries, max_depth=2) == ["src/", "  pkg/", "    … (1 entries)"]
     assert render.diff([{"type": "add", "content": "x"}, {"type": "del", "content": "y"}, "@@ hunk"]) == "+x\n-y\n@@ hunk"
+
+
+@respx.mock
+async def test_upstream_401_does_not_touch_session(logged_in):
+    """Live bug: a rejected Jira PAT (401 without WWW-Authenticate) triggered a
+    token refresh and was reported as auth_required."""
+    refresh = respx.post(f"{API}/api/v1/auth/azure/refresh").mock(return_value=httpx.Response(200, json={"access_token": make_jwt(jti="x")}))
+    respx.post(f"{API}/api/v1/jira/projects").mock(return_value=httpx.Response(401, json={"detail": "Invalid credential"}))
+    with pytest.raises(errors.ApiError) as exc:
+        await app.client.post("/api/v1/jira/projects", {"pat": "bad"})
+    assert exc.value.code == "credential_rejected" and not refresh.called
