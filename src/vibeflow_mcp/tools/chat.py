@@ -9,10 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp.server.fastmcp import Context
-
 from .. import config, render
-from ..app import client, default_task, require_confirm, run_info, run_session, running_session, tool
+from ..app import Context, client, default_task, require_confirm, run_info, run_session, running_session, tool
 from ..errors import ApiError, VibeFlowError
 from .sandbox import ensure_session
 

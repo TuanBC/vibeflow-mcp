@@ -207,7 +207,7 @@ Total ≈ 150 tools / ~4–5 weeks for one engineer; Phases 1–3 (~2 weeks) alr
 - Headless Chromium must override the `HeadlessChrome` UA (WAF 403s it). Silent re-login must clear the SPA's
   cached localStorage tokens first, or it lifts a stale pair whose refresh token was already rotated away.
 - Windows Credential Manager caps secrets at 2560 bytes → keyring storage is chunked.
-- `mcp` 2.x renamed FastMCP → pinned `mcp<2`.
+- Built on the official `mcp` SDK 2.x (`MCPServer`, formerly `FastMCP` in 1.x); all SDK imports are in `app.py`.
 - A **new run reports `idle` before the agent picks it up**, and a follow-up before its turn starts: completion =
   idle + last message is a *completed* assistant message + message count ≥ expected. One turn can span several
   assistant messages (tool step, then answer).

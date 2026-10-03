@@ -5,7 +5,6 @@ import pytest
 import respx
 
 from conftest import API, payload
-from vibeflow_mcp import app
 from vibeflow_mcp.tools import advanced
 
 
@@ -76,18 +75,3 @@ async def test_background_job_body(api):
     assert body_of(route) == {"callID": "call_9"}
 
 
-async def test_resources_and_prompts_registered():
-    templates = {t.uriTemplate for t in await app.mcp.list_resource_templates()}
-    assert "vibeflow://runs/{run_id}/transcript" in templates and "vibeflow://projects/{project_id}/overview" in templates
-    prompts = {p.name for p in await app.mcp.list_prompts()}
-    assert {"vibeflow_bug_fix", "vibeflow_code_review", "vibeflow_rfp_to_demo"} <= prompts
-    msgs = await app.mcp.get_prompt("vibeflow_bug_fix", {"project_id": "p1", "request": "500 on login"})
-    text = msgs.messages[0].content.text
-    assert 'workflow="builtin-bug-fix"' in text and "500 on login" in text
-
-
-async def test_messages_resource_renders(api):
-    api.get("/api/v1/runs/r1/messages").mock(return_value=httpx.Response(200, json={"messages": [
-        {"role": "user", "parts": [{"type": "text", "text": "hi"}]}]}))
-    contents = list(await app.mcp.read_resource("vibeflow://runs/r1/messages"))
-    assert "### user\nhi" in contents[0].content

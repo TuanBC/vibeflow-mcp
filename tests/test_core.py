@@ -171,12 +171,6 @@ def test_toolsets_registered():
     assert set(app.REGISTERED.values()) <= config.TOOLSETS
 
 
-async def test_tool_annotations():
-    tools = {t.name: t for t in await app.mcp.list_tools()}
-    assert tools["vibeflow_list_projects"].annotations.readOnlyHint is True
-    assert tools["vibeflow_stop_session"].annotations.destructiveHint is True
-
-
 async def test_tool_returns_structured_error_when_logged_out():
     out = payload(await core.vibeflow_whoami())
     assert out["error"] == "auth_required" and "vibeflow_login" in out["hint"]

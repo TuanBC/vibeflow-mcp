@@ -9,10 +9,10 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 
-from . import config
+from . import __version__, config
 from .auth import TokenStore
 from .client import VibeFlowClient
 from .errors import ConfirmationRequired, VibeFlowError
@@ -20,8 +20,13 @@ from .errors import ConfirmationRequired, VibeFlowError
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("vibeflow_mcp")
 
-mcp = FastMCP(
+# All MCP SDK imports live in this module (tools import Context from here), so a
+# future SDK change touches one file.
+__all__ = ["Context", "mcp", "tool", "require_confirm"]
+
+mcp = MCPServer(
     "vibeflow",
+    version=__version__,
     instructions=(
         "Tools for the VibeFlow AI software-development platform (vibeflow.fptconsulting.co.jp). "
         "Start with vibeflow_auth_status; if not authenticated call vibeflow_login (opens a browser "
