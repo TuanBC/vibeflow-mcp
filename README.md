@@ -3,6 +3,8 @@
 MCP server for **VibeFlow** (https://vibeflow.fptconsulting.co.jp) — drive projects, sandboxes, AI-agent
 conversations, workflows, code review, previews and analytics from your AI assistant, without the web UI.
 
+**Fastest:** paste [one prompt into your agent](#quick-setup-with-your-agent) and it sets everything up.
+
 **Quick install** (after [step 1](#1-install-the-server-once)):
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_vibeflow-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=vibeflow&config=%7B%22command%22%3A%22vibeflow-mcp%22%2C%22args%22%3A%5B%5D%2C%22env%22%3A%7B%22VIBEFLOW_TOOLSETS%22%3A%22core%2Ccode%2Canalytics%2Cadvanced%22%7D%7D)
@@ -13,14 +15,15 @@ conversations, workflows, code review, previews and analytics from your AI assis
 The VS Code buttons install the server for **GitHub Copilot**. Claude Code and Hermes have no install links, so
 their badges jump to a one-step setup below.
 
-Status: all 7 planned phases implemented — 175 tools in 6 toolsets plus MCP resources and prompts, 163 unit
+Status: all 7 planned phases implemented — 175 tools in 6 toolsets plus MCP resources and prompts, 167
 tests, verified against production (see [BACKLOG.md](BACKLOG.md) for what is not yet verified live).
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) has the feature map and learnings.
 
 ## Contents
 
 - [What VibeFlow can do (and how this MCP covers it)](#what-vibeflow-can-do-and-how-this-mcp-covers-it)
-- [Installation](#installation) — [Claude Code](#claude-code) · [GitHub Copilot](#github-copilot-vs-code) ·
+- [Installation](#installation) — [Quick setup with your agent](#quick-setup-with-your-agent) ·
+  [Manual installation](#manual-installation): [Claude Code](#claude-code) · [GitHub Copilot](#github-copilot-vs-code) ·
   [Hermes Agent](#hermes-agent) · [Microsoft 365 Copilot / ChatGPT Enterprise](#microsoft-365-copilot-and-chatgpt-enterprise) ·
   [Agent skills](#3-install-the-agent-skills-recommended)
 - [How auth works](#how-auth-works) · [CLI](#cli) · [Configuration](#configuration-env) · [Tools](#tools)
@@ -63,13 +66,49 @@ talks to Microsoft Graph directly), and connecting a personal OpenAI account (br
 
 ## Installation
 
-### Requirements
+### Quick setup with your agent
+
+Copy this prompt into Claude Code, GitHub Copilot (Agent mode) or Hermes. The agent installs and connects
+everything, and stops only for you to sign in with Microsoft SSO. Prefer doing it yourself? See
+[Manual installation](#manual-installation).
+
+```text
+Set up the VibeFlow MCP server (https://github.com/TuanBC/vibeflow-mcp) for the agent you are running in,
+end to end. Follow the repository README ("Manual installation") as the source of truth.
+
+1. Prerequisites: check git, Python >= 3.10 and uv (`uv --version`). If uv is missing, show me the official
+   install command from https://docs.astral.sh/uv/ and run it only after I agree.
+2. Get the code: clone the repository into ~/vibeflow-mcp (or `git pull` if it is already there).
+3. Install the server from that folder: `uv tool install --reinstall .`, then `uv tool update-shell`.
+   Check that the `vibeflow-mcp` command works (`vibeflow-mcp status`); if it is not on PATH yet, use the
+   full path that uv prints.
+4. Install the sign-in browser: `vibeflow-mcp install-browser`.
+5. Sign in: run `vibeflow-mcp login`. Tell me a browser window will open, wait while I complete Microsoft
+   SSO myself, then confirm with `vibeflow-mcp status` ("authenticated": true). Never type my credentials.
+6. Connect the server to the agent you are running in, using the README section for it:
+   - Claude Code: `claude mcp add vibeflow --scope user -e VIBEFLOW_TOOLSETS=core,code,pm,analytics,advanced -- vibeflow-mcp`
+   - GitHub Copilot in VS Code: add the "vibeflow" server to my user mcp.json with
+     VIBEFLOW_TOOLSETS=core,code,analytics,advanced (Copilot allows max 128 tools).
+   - Hermes Agent: add the `mcp_servers.vibeflow` block to ~/.hermes/config.yaml (timeout 900).
+   Merge into existing config files; never remove or overwrite other servers. Show me the change.
+7. Install the agent skills: copy every `skills/vibeflow-*` folder into the skills folder for this agent
+   (Claude Code: ~/.claude/skills, Copilot: ~/.copilot/skills, Hermes: ~/.hermes/skills).
+8. Tell me exactly what to restart or reload. After that, verify by calling the `vibeflow_auth_status`
+   and `vibeflow_list_projects` tools, and summarise what was installed and where.
+
+Do not commit or push anything, do not change system settings, and ask before installing software
+other than this server.
+```
+
+### Manual installation
+
+#### Requirements
 
 - Windows, macOS or Linux with **Python ≥ 3.10** and [**uv**](https://docs.astral.sh/uv/getting-started/installation/)
 - A VibeFlow account (Microsoft / FPT SSO)
 - Network access to `vibeflow.fptconsulting.co.jp` and `api.vibeflow.fptconsulting.co.jp`
 
-### 1. Install the server (once)
+#### 1. Install the server (once)
 
 From this repository's folder:
 
@@ -95,12 +134,12 @@ vibeflow-mcp login
 The token is stored in your OS credential manager and refreshed automatically; `vibeflow-mcp status` shows it.
 To update later, run `uv tool install --reinstall .` from the repository folder.
 
-### 2. Connect your AI assistant
+#### 2. Connect your AI assistant
 
 All clients run the same local command, `vibeflow-mcp`, over stdio. `VIBEFLOW_TOOLSETS` picks the tool groups
 (see [Configuration](#configuration-env) and the [toolset sizes](#tools)).
 
-#### Claude Code
+##### Claude Code
 
 ```bash
 claude mcp add vibeflow --scope user -e VIBEFLOW_TOOLSETS=core,code,pm,analytics,advanced -- vibeflow-mcp
@@ -109,7 +148,7 @@ claude mcp add vibeflow --scope user -e VIBEFLOW_TOOLSETS=core,code,pm,analytics
 `--scope user` makes it available in every project; use `--scope project` to write a shared `.mcp.json` instead.
 Check with `claude mcp list`, then ask Claude e.g. *"Use vibeflow to list my projects"*.
 
-#### GitHub Copilot (VS Code)
+##### GitHub Copilot (VS Code)
 
 Click **Install in VS Code** (or **VS Code Insiders**) at the top of this page, then open Copilot Chat in **Agent**
 mode and enable the `vibeflow` tools. Manual alternative — add to `.vscode/mcp.json` (workspace) or your user
@@ -132,7 +171,7 @@ project-management work, swap a group in, e.g. `"core,pm"`. Copilot in Visual St
 same `command` / `env` fields in its own MCP settings. Your organisation may need to allow MCP servers in its
 Copilot policies.
 
-#### Hermes Agent
+##### Hermes Agent
 
 Add to Hermes' `config.yaml` (`~/.hermes/config.yaml`; on Windows `%LOCALAPPDATA%\hermes\config.yaml`) and restart
 Hermes. The longer `timeout` lets agent runs (`vibeflow_ask`, workflows) finish:
@@ -150,7 +189,7 @@ mcp_servers:
 
 Hermes needs its optional `mcp` Python package (`pip install mcp`). Tools appear as `mcp_vibeflow_*`.
 
-#### Microsoft 365 Copilot and ChatGPT Enterprise
+##### Microsoft 365 Copilot and ChatGPT Enterprise
 
 **Not supported today.** Both connect only to **remote MCP servers over HTTPS** (M365 Copilot through Copilot
 Studio / declarative agents, ChatGPT through custom connectors), while this server runs **locally** and acts with
@@ -158,14 +197,14 @@ Studio / declarative agents, ChatGPT through custom connectors), while this serv
 Supporting them needs a hosted, multi-user version with its own OAuth in front of VibeFlow — ideally an official
 VibeFlow API or MCP endpoint. Until then, use one of the local clients above.
 
-### 3. Install the agent skills (recommended)
+#### 3. Install the agent skills (recommended)
 
 The [`skills/`](skills/README.md) folder holds 12 `SKILL.md` playbooks that teach the agent *how* to use the tools
 (tool order, outcomes, guardrails). The agent loads a skill only when its description matches the task, so
 installing all of them costs almost nothing. Run the commands from this repository's folder; re-run them after
 pulling updates. Skills need the MCP server from step 2 to be connected.
 
-#### Claude Code
+##### Claude Code
 
 Personal (every project):
 
@@ -180,7 +219,7 @@ New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null; Copy-Item
 Or per project (shared with the team through git): copy into `<project>/.claude/skills/` instead. Restart Claude
 Code, then ask *"What skills do you have for VibeFlow?"* to check they are picked up.
 
-#### GitHub Copilot (VS Code)
+##### GitHub Copilot (VS Code)
 
 Personal skills go in `~/.copilot/skills/`; project skills in `<repo>/.github/skills/` (VS Code also reads
 `.claude/skills/` and `.agents/skills/`, so a Claude Code install works for Copilot too):
@@ -197,7 +236,7 @@ Skills work in Copilot Chat **Agent** mode. If they are not picked up, update VS
 are enabled in your settings and allowed by your organisation's Copilot policies. Because the Copilot config above
 leaves out `pm`, the `vibeflow-project-setup` and `vibeflow-kanban-planning` skills only work after you swap `pm` in.
 
-#### Hermes Agent
+##### Hermes Agent
 
 Hermes reads skills from `~/.hermes/skills/` (the `skills` folder next to its `config.yaml`):
 
@@ -212,7 +251,7 @@ New-Item -ItemType Directory -Force "$HOME\.hermes\skills" | Out-Null; Copy-Item
 Start a new Hermes session to load them. Hermes prefixes MCP tools as `mcp_vibeflow_*`; the skills name tools
 `vibeflow_*`, which the agent maps to the prefixed names.
 
-#### Other agents
+##### Other agents
 
 Any framework that supports the [Agent Skills](https://agentskills.io) format (`<name>/SKILL.md` with
 `name` / `description` frontmatter) can use the folders as they are — copy them into its skills directory. For
