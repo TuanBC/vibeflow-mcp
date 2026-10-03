@@ -4,7 +4,7 @@
       "command": "C:\\1_personal_course\\viettel\\vibeflow-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "vibeflow_mcp"],
       "env": {
-        "VIBEFLOW_TOOLSETS": "core,code"
+        "VIBEFLOW_TOOLSETS": "core,code,pm,analytics"
       }
     }
   }
