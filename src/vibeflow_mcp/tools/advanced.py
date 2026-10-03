@@ -140,17 +140,41 @@ async def vibeflow_sandbox_mcp_servers(project_id: str) -> Any:
     return data
 
 
+@tool("advanced", read_only=True)
+async def vibeflow_list_background_jobs(run_id: str) -> Any:
+    """Tool calls of a conversation that are still running (movable to the
+    background with vibeflow_background_tool_call) and background jobs with
+    their status (stoppable with vibeflow_stop_job)."""
+    data = await client.get(f"/api/v1/runs/{run_id}/messages")
+    running, jobs = [], []
+    for m in data.get("messages", []) if isinstance(data, dict) else data:
+        for p in m.get("parts") or []:
+            if p.get("type") != "tool":
+                continue
+            state = p.get("tool_state") if isinstance(p.get("tool_state"), dict) else {}
+            meta = state.get("metadata") or {}
+            call_id = (p.get("metadata") or {}).get("callID")
+            title = meta.get("description") or (state.get("input") or {}).get("command")
+            if meta.get("background"):
+                jobs.append({"job_id": meta.get("jobId") or call_id, "tool": p.get("tool_name"), "title": title,
+                             "status": meta.get("backgroundStatus"), "exit": meta.get("exit")})
+            elif state.get("status") == "running":
+                running.append({"call_id": call_id, "tool": p.get("tool_name"), "title": title})
+    return {"running_tool_calls": running, "background_jobs": jobs}
+
+
 @tool("advanced")
 async def vibeflow_background_tool_call(run_id: str, call_id: str) -> Any:
     """Move a long-running tool call (e.g. a build or test run) of the agent to
-    the background so the conversation can continue. call_id from the tool part."""
+    the background so the conversation can continue. call_id from
+    vibeflow_list_background_jobs (running_tool_calls)."""
     sid = await run_session(run_id)
     return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/jobs/background", {"callID": call_id})
 
 
 @tool("advanced", destructive=True)
 async def vibeflow_stop_job(run_id: str, job_id: str) -> Any:
-    """Stop a background shell job of a conversation."""
+    """Stop a background shell job of a conversation (job_id from vibeflow_list_background_jobs)."""
     sid = await run_session(run_id)
     return await client.post(f"/sessions/{sid}/vibeflow/runs/{run_id}/jobs/{job_id}/stop", {})
 

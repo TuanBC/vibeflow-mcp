@@ -193,3 +193,43 @@ async def test_docs_search_and_read(api):
     hits = payload(await core.vibeflow_search_docs("revert timeline"))
     assert hits[0]["path"] == "/docs/features/restore-points" and len(hits) == 1
     assert payload(await core.vibeflow_read_docs("features/preview")) == "Preview\nRun your & app"
+
+
+
+async def test_restore_point_diff_uses_before_snapshot(api):
+    """Live finding: diffs are keyed by before_snapshot; message ids return []."""
+    api.get("/api/v1/runs/r1").mock(return_value=httpx.Response(200, json={"session_id": "s1"}))
+    api.get("/sessions/s1/vibeflow/runs/r1/restore-points").mock(return_value=httpx.Response(200, json={"points": [
+        {"message_id": "m1", "assistant_message_id": "a1", "before_snapshot": "snapA", "file_count": 1}]}))
+    diff = api.get("/sessions/s1/vibeflow/runs/r1/restore-points/snapA/diff").mock(
+        return_value=httpx.Response(200, json={"diff": [{"file": "notes.txt", "patch": "+line two"}]}))
+    assert payload(await code.vibeflow_restore_point_diff("r1", "a1")) == [{"file": "notes.txt", "patch": "+line two"}]
+    assert payload(await code.vibeflow_restore_point_diff("r1", "m1")) == [{"file": "notes.txt", "patch": "+line two"}]
+    assert diff.call_count == 2
+
+
+async def test_default_task_fallbacks_for_new_project(logged_in):
+    """Live finding: a new project has no 'recent task'; fall back to its task
+    list, else create the default 'Main' task."""
+    from vibeflow_mcp import app
+    with respx.mock(base_url=API, assert_all_called=False) as mock:
+        mock.get("/api/v1/projects/pA/my-recent-task").mock(return_value=httpx.Response(200, json={}))
+        mock.get("/api/v1/tasks").mock(side_effect=[httpx.Response(200, json=[{"id": "tA"}]), httpx.Response(200, json=[])])
+        mock.get("/api/v1/projects/pB/my-recent-task").mock(return_value=httpx.Response(200, json={}))
+        create = mock.post("/api/v1/kanban/tasks").mock(return_value=httpx.Response(201, json={"id": "tMain"}))
+        assert await app.default_task("pA") == "tA"
+        assert await app.default_task("pB") == "tMain"
+        assert json.loads(create.calls.last.request.read()) == {"project_id": "pB", "name": "Main"}
+
+
+async def test_list_background_jobs(api):
+    from vibeflow_mcp.tools import advanced
+    api.get("/api/v1/runs/r1/messages").mock(return_value=httpx.Response(200, json={"messages": [{"role": "assistant", "parts": [
+        {"type": "tool", "tool_name": "bash", "metadata": {"callID": "c1"},
+         "tool_state": {"status": "running", "input": {"command": "npm test"}, "metadata": {}}},
+        {"type": "tool", "tool_name": "bash", "metadata": {"callID": "c2"},
+         "tool_state": {"status": "completed", "metadata": {"background": True, "jobId": "c2", "backgroundStatus": "cancelled",
+                                                            "description": "sleep"}}}]}]}))
+    assert payload(await advanced.vibeflow_list_background_jobs("r1")) == {
+        "running_tool_calls": [{"call_id": "c1", "tool": "bash", "title": "npm test"}],
+        "background_jobs": [{"job_id": "c2", "tool": "bash", "title": "sleep", "status": "cancelled", "exit": None}]}

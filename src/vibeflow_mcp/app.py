@@ -90,8 +90,14 @@ async def default_task(project_id: str) -> str:
         data = await client.get(f"/api/v1/projects/{project_id}/my-recent-task")
         task_id = data.get("task_id") or data.get("id")
         if not task_id:
-            raise VibeFlowError(f"Project {project_id} has no task yet.", code="not_found",
-                                hint="Create a task (kanban) in the project first.")
+            # Brand-new project (no task opened yet): use its first task, else
+            # create the default "Main" task like the SPA does on first open.
+            tasks = await client.get("/api/v1/tasks", project_id=project_id)
+            tasks = tasks.get("tasks", []) if isinstance(tasks, dict) else tasks
+            if tasks:
+                task_id = tasks[0]["id"]
+            else:
+                task_id = (await client.post("/api/v1/kanban/tasks", {"project_id": project_id, "name": "Main"}))["id"]
         _task_cache[project_id] = task_id
     return _task_cache[project_id]
 

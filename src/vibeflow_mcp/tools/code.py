@@ -149,7 +149,7 @@ async def _backup_workspace(project_id: str) -> str:
     from .. import config
 
     try:
-        data = await client.get_bytes("/api/v1/files/download-workspace", task_id=await default_task(project_id))
+        data = await client.get_bytes("/api/v1/files/download-workspace", project_id=project_id)
     except VibeFlowError as exc:
         raise VibeFlowError(f"Could not back up the current workspace ({exc.message}); nothing was replaced.",
                             code="backup_failed") from exc
@@ -183,8 +183,7 @@ async def vibeflow_download_file(project_id: str, path: str, local_path: str) ->
 @tool("code")
 async def vibeflow_download_workspace(project_id: str, local_path: str) -> Any:
     """Download the whole workspace as a zip archive to a local path."""
-    return await _save(await client.get_bytes("/api/v1/files/download-workspace",
-                                              task_id=await default_task(project_id)), local_path)
+    return await _save(await client.get_bytes("/api/v1/files/download-workspace", project_id=project_id), local_path)
 
 
 # ------------------------------------------------------------------ branches
@@ -324,9 +323,23 @@ async def vibeflow_list_restore_points(run_id: str) -> Any:
 
 
 @tool("code", read_only=True)
-async def vibeflow_restore_point_diff(run_id: str, message_id: str) -> Any:
-    """What reverting to a restore point would change."""
-    return (await _rp_call(run_id, "GET", f"/restore-points/{message_id}/diff")).get("diff", [])
+async def vibeflow_restore_point_diff(run_id: str, point: str) -> Any:
+    """Patches of one restore point (the files that turn changed). point: the
+    point's assistant_message_id, message_id or before_snapshot from
+    vibeflow_list_restore_points. Returns [{file, patch}]."""
+    # The diff is keyed by the point's before_snapshot (as in the SPA); message
+    # ids are accepted by the API but always answer an empty diff.
+    snapshot = point
+    points = (await _rp_call(run_id, "GET", "/restore-points")).get("points", [])
+    for p in points:
+        if point == p.get("assistant_message_id") or point == p.get("before_snapshot"):
+            snapshot = p.get("before_snapshot") or point
+            break
+    else:
+        match = next((p for p in points if p.get("message_id") == point and p.get("file_count")), None)
+        if match:
+            snapshot = match.get("before_snapshot") or point
+    return (await _rp_call(run_id, "GET", f"/restore-points/{snapshot}/diff")).get("diff", [])
 
 
 @tool("code", destructive=True)
