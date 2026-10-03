@@ -130,10 +130,19 @@ async def test_prompt_templates_are_summarized(api):
     assert out["categories"] == ["dev"] and "prompt" not in out["templates"][0]
 
 
-async def test_agent_template_uses_system_prompt_key(api):
+async def test_agent_template_uses_user_prompt_key(api):
+    """Live finding: custom agents store their instructions in userPrompt."""
     route = api.post("/api/v1/projects/p1/templates/agents").mock(return_value=httpx.Response(201, json={}))
     await pm.vibeflow_create_agent_template("p1", "qa-bot", "You test things.", color="#fff")
-    assert body_of(route) == {"name": "qa-bot", "systemPrompt": "You test things.", "color": "#fff"}
+    assert body_of(route) == {"name": "qa-bot", "userPrompt": "You test things.", "color": "#fff"}
+
+
+async def test_prompt_template_variables_become_objects(api):
+    route = api.post("/api/v1/projects/p1/templates/prompts").mock(return_value=httpx.Response(201, json={}))
+    await pm.vibeflow_create_prompt_template("p1", "t1", "T", "Review {{file}}",
+                                             variables=["file", {"name": "depth", "type": "select", "options": ["a"]}])
+    assert body_of(route)["variables"] == [{"name": "file", "type": "text", "required": True},
+                                           {"name": "depth", "type": "select", "options": ["a"]}]
 
 
 async def test_workflow_template_create_and_import(api):

@@ -288,14 +288,25 @@ async def vibeflow_list_prompt_templates(project_id: str | None = None) -> Any:
                            "description": t.get("description")} for t in data.get("templates", [])]}
 
 
+def _variables(variables: list[Any] | None) -> list[dict[str, Any]] | None:
+    """Template variables are objects {name, type: text|file|select, required,
+    description, options, default}; bare names become required text inputs."""
+    if variables is None:
+        return None
+    return [v if isinstance(v, dict) else {"name": str(v), "type": "text", "required": True} for v in variables]
+
+
 @tool("pm")
 async def vibeflow_create_prompt_template(project_id: str, template_id: str, name: str, prompt: str,
                                           category: str | None = None, description: str | None = None,
-                                          agent: str | None = None, variables: list[str] | None = None) -> Any:
-    """Save a reusable prompt template in a project ({{variables}} in prompt)."""
+                                          agent: str | None = None,
+                                          variables: list[str | dict[str, Any]] | None = None) -> Any:
+    """Save a reusable prompt template in a project. Use {{name}} placeholders in
+    prompt; variables: names, or objects {name, type: text|file|select,
+    required, description, options, default}."""
     return await client.post(f"/api/v1/projects/{project_id}/templates/prompts", _clean(
         id=template_id, name=name, prompt=prompt, category=category, description=description,
-        agent=agent, variables=variables))
+        agent=agent, variables=_variables(variables)))
 
 
 @tool("pm", destructive=True)
@@ -307,7 +318,8 @@ async def vibeflow_delete_prompt_template(project_id: str, template_id: str, con
 
 @tool("pm", read_only=True)
 async def vibeflow_get_agent_template(project_id: str, name: str) -> Any:
-    """Full definition (system prompt, tools, look) of an agent from vibeflow_list_agents."""
+    """Full definition of an agent from vibeflow_list_agents: systemPrompt (built-in
+    agents) or userPrompt (custom agents), tools, look."""
     agents = (await client.get(f"/api/v1/projects/{project_id}/templates/agents")).get("agents", [])
     for a in agents:
         if a.get("name") == name:
@@ -316,21 +328,22 @@ async def vibeflow_get_agent_template(project_id: str, name: str) -> Any:
 
 
 @tool("pm")
-async def vibeflow_create_agent_template(project_id: str, name: str, system_prompt: str,
+async def vibeflow_create_agent_template(project_id: str, name: str, prompt: str,
                                          description: str | None = None, icon: str | None = None,
                                          color: str | None = None, tools: list[str] | None = None) -> Any:
-    """Define a custom specialist agent for a project (usable via the agent picker)."""
+    """Define a custom specialist agent for a project (usable via the agent
+    picker). prompt = the agent's instructions (the SPA's agent prompt field)."""
     return await client.post(f"/api/v1/projects/{project_id}/templates/agents", _clean(
-        name=name, systemPrompt=system_prompt, description=description, icon=icon, color=color, tools=tools))
+        name=name, userPrompt=prompt, description=description, icon=icon, color=color, tools=tools))
 
 
 @tool("pm", idempotent=True)
 async def vibeflow_update_agent_template(project_id: str, agent_id: str, name: str | None = None,
-                                         system_prompt: str | None = None, description: str | None = None,
+                                         prompt: str | None = None, description: str | None = None,
                                          icon: str | None = None, color: str | None = None,
                                          tools: list[str] | None = None) -> Any:
     """Update a project-defined agent (built-in agents cannot be edited)."""
-    body = _require(_clean(name=name, systemPrompt=system_prompt, description=description, icon=icon,
+    body = _require(_clean(name=name, userPrompt=prompt, description=description, icon=icon,
                            color=color, tools=tools), "agent")
     return await client.put(f"/api/v1/projects/{project_id}/templates/agents/{agent_id}", body)
 
