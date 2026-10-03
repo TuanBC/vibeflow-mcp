@@ -220,25 +220,30 @@ async def vibeflow_delete_kanban_task(task_id: str, confirm: bool = False) -> An
 
 # --------------------------------------------------------- tasks & attachments
 
+# Workbench tasks are kanban cards. The generic /api/v1/tasks create/update
+# endpoints ignore `description` and DELETE /api/v1/tasks/{id} answers 500
+# (verified live 2026-10-03), so these go through the kanban endpoints.
+
 @tool("pm")
-async def vibeflow_create_task(name: str, project_id: str | None = None, description: str | None = None) -> Any:
-    """Create a workbench task (conversation + workflow container)."""
-    return await client.post("/api/v1/tasks", _clean(name=name, project_id=project_id, description=description))
+async def vibeflow_create_task(project_id: str, name: str, description: str | None = None) -> Any:
+    """Create a workbench task (= kanban card in the first column). For column,
+    priority, estimates or assignee use vibeflow_create_kanban_task."""
+    return await client.post("/api/v1/kanban/tasks", _clean(project_id=project_id, name=name, description=description))
 
 
 @tool("pm", idempotent=True)
-async def vibeflow_update_task(task_id: str, name: str | None = None, description: str | None = None,
-                               status: str | None = None, branch_name: str | None = None) -> Any:
-    """Update a task's name, description, status or branch."""
-    body = _require(_clean(name=name, description=description, status=status, branch_name=branch_name), "task")
-    return await client.put(f"/api/v1/tasks/{task_id}", body)
+async def vibeflow_update_task(task_id: str, name: str | None = None, description: str | None = None) -> Any:
+    """Rename a task or change its description (move columns with vibeflow_move_kanban_task)."""
+    body = _require(_clean(name=name, description=description), "task")
+    return await client.put(f"/api/v1/kanban/tasks/{task_id}", body)
 
 
 @tool("pm", destructive=True)
 async def vibeflow_delete_task(task_id: str, confirm: bool = False) -> Any:
-    """Delete a task and its conversations. Requires confirm=true."""
+    """Delete a task / kanban card and its conversations. Prefer archiving
+    (vibeflow_archive_kanban_task). Requires confirm=true."""
     require_confirm(confirm, "delete task")
-    return await client.delete(f"/api/v1/tasks/{task_id}")
+    return await client.delete(f"/api/v1/kanban/tasks/{task_id}")
 
 
 @tool("pm", read_only=True)

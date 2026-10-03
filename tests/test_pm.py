@@ -198,3 +198,16 @@ async def test_sharepoint_missing_source_is_none(api):
 
 async def test_update_settings_needs_field(api):
     assert payload(await pm.vibeflow_update_settings())["error"] == "bad_request"
+
+
+async def test_task_tools_use_kanban_endpoints(api):
+    """Live finding: /api/v1/tasks ignores description and its DELETE answers 500."""
+    create = api.post("/api/v1/kanban/tasks").mock(return_value=httpx.Response(201, json={"id": "k9"}))
+    update = api.put("/api/v1/kanban/tasks/k9").mock(return_value=httpx.Response(200, json={}))
+    delete = api.delete("/api/v1/kanban/tasks/k9").mock(return_value=httpx.Response(200))
+    await pm.vibeflow_create_task("p1", "T", description="d")
+    await pm.vibeflow_update_task("k9", description="d2")
+    assert payload(await pm.vibeflow_delete_task("k9"))["error"] == "confirmation_required"
+    await pm.vibeflow_delete_task("k9", confirm=True)
+    assert body_of(create) == {"project_id": "p1", "name": "T", "description": "d"}
+    assert body_of(update) == {"description": "d2"} and delete.called
